@@ -1,11 +1,7 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
 import path from "node:path";
-import {
-  detectProjectFormat,
-  loadConfig,
-  saveConfig,
-} from "./config.ts";
+import { detectProjectFormat, loadConfig, saveConfig } from "./config.ts";
 import {
   fetchRawFile,
   getAuthToken,
@@ -16,16 +12,8 @@ import {
 import { getTargetDirectories, pullItems } from "./pull.ts";
 import { scanTree } from "./scanner.ts";
 import type { AgentFormat, PullItemType, PullOptions } from "./types.ts";
-import {
-  banner,
-  c,
-  divider,
-  error,
-  info,
-  step,
-  success,
-  warn,
-} from "./ui.ts";
+import { checkbox, input } from "@inquirer/prompts";
+import { banner, c, divider, error, info, step, success, warn } from "./ui.ts";
 
 function printHelp(): void {
   banner();
@@ -52,6 +40,7 @@ ${c.bold("OPTIONS:")}
   ${c.yellow("--force")}               Overwrite existing files without prompting
   ${c.yellow("--dry-run")}             Simulate downloads without writing files
   ${c.yellow("--token")} <token>       Explicit GitHub Personal Access Token
+  ${c.yellow("-y, --yes")}             Skip interactive selection (pull all)
   ${c.yellow("-v, --version")}         Show CLI version
   ${c.yellow("-h, --help")}            Show help message
 
@@ -87,6 +76,7 @@ async function main(): Promise<void> {
       force: { type: "boolean", default: false },
       "dry-run": { type: "boolean", default: false },
       token: { type: "string" },
+      yes: { type: "boolean", short: "y", default: false },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
     },
@@ -132,8 +122,12 @@ async function main(): Promise<void> {
     };
     await saveConfig(newConfig);
 
-    success(`Created rules directory: ${c.dim(path.relative(process.cwd(), rulesDir))}`);
-    success(`Created skills directory: ${c.dim(path.relative(process.cwd(), skillsDir))}`);
+    success(
+      `Created rules directory: ${c.dim(path.relative(process.cwd(), rulesDir))}`,
+    );
+    success(
+      `Created skills directory: ${c.dim(path.relative(process.cwd(), skillsDir))}`,
+    );
     success(`Saved configuration to ${c.dim(".agentrc.json")}`);
     return;
   }
@@ -143,10 +137,22 @@ async function main(): Promise<void> {
   if (!repoInput && (command === "pull" || command === "list")) {
     banner();
     if (process.stdin.isTTY) {
-      const answer = prompt(
-        `${c.cyan("?")} Enter GitHub repository (${c.dim("owner/repo")}): `
-      );
-      repoInput = answer?.trim() || undefined;
+      try {
+        repoInput = await input({
+          message: "Enter GitHub repository (owner/repo):",
+          validate: (val) => {
+            try {
+              parseRepo(val);
+              return true;
+            } catch (err: any) {
+              return err.message || "Invalid repository format";
+            }
+          },
+        });
+        repoInput = repoInput.trim() || undefined;
+      } catch {
+        // user aborted
+      }
     }
 
     if (!repoInput) {
@@ -160,7 +166,7 @@ async function main(): Promise<void> {
   if (command === "sync") {
     if (!repoInput) {
       error(
-        "No previous repository configured in .agentrc.json. Run 'crawler pull --repo <owner/repo>' first."
+        "No previous repository configured in .agentrc.json. Run 'crawler pull --repo <owner/repo>' first.",
       );
       process.exit(1);
     }
@@ -182,7 +188,9 @@ async function main(): Promise<void> {
       process.exit(1);
     }
   }
-  info(`Using branch: ${c.yellow(branch)}${token ? c.dim(" (authenticated)") : ""}`);
+  info(
+    `Using branch: ${c.yellow(branch)}${token ? c.dim(" (authenticated)") : ""}`,
+  );
 
   step(2, 3, "Scanning repository tree for SKILL.md and rules...");
   let treeRes;
@@ -201,9 +209,9 @@ async function main(): Promise<void> {
     console.log(
       c.bold(
         `Found ${c.green(String(rules.length))} rule(s) and ${c.green(
-          String(skills.length)
-        )} skill(s) in ${c.cyan(`${owner}/${repo}@${branch}`)}:`
-      )
+          String(skills.length),
+        )} skill(s) in ${c.cyan(`${owner}/${repo}@${branch}`)}:`,
+      ),
     );
     console.log("");
 
@@ -212,7 +220,9 @@ async function main(): Promise<void> {
       console.log(c.dim("  (no rules found)"));
     } else {
       for (const rule of rules) {
-        console.log(`  ${c.cyan("•")} ${c.bold(rule.name)} ${c.dim(`(${rule.sourcePath})`)}`);
+        console.log(
+          `  ${c.cyan("•")} ${c.bold(rule.name)} ${c.dim(`(${rule.sourcePath})`)}`,
+        );
       }
     }
 
@@ -224,8 +234,8 @@ async function main(): Promise<void> {
       for (const skill of skills) {
         console.log(
           `  ${c.magenta("•")} ${c.bold(skill.name)} ${c.dim(
-            `(${skill.files.length} file${skill.files.length === 1 ? "" : "s"} at ${skill.baseDir})`
-          )}`
+            `(${skill.files.length} file${skill.files.length === 1 ? "" : "s"} at ${skill.baseDir})`,
+          )}`,
         );
       }
     }
@@ -255,11 +265,11 @@ async function main(): Promise<void> {
       filteredRules = rules.filter(
         (r) =>
           requestedRules.includes(r.name.toLowerCase()) ||
-          requestedRules.includes(r.id)
+          requestedRules.includes(r.id),
       );
     } else if (command === "sync" && projectConfig.installedRules) {
       filteredRules = rules.filter((r) =>
-        projectConfig.installedRules?.includes(r.name)
+        projectConfig.installedRules?.includes(r.name),
       );
     }
 
@@ -274,20 +284,124 @@ async function main(): Promise<void> {
       filteredSkills = skills.filter(
         (s) =>
           requestedSkills.includes(s.name.toLowerCase()) ||
-          requestedSkills.includes(s.id)
+          requestedSkills.includes(s.id),
       );
     } else if (command === "sync" && projectConfig.installedSkills) {
       filteredSkills = skills.filter((s) =>
-        projectConfig.installedSkills?.includes(s.name)
+        projectConfig.installedSkills?.includes(s.name),
       );
+    }
+
+    // 1. Select rules before pulling
+    if (pullType !== "skills" && rules.length > 0 && command !== "sync") {
+      if (!hasExplicitRule && !hasExplicitSkill) {
+        if (process.stdin.isTTY && !values.yes) {
+          try {
+            const selectedRuleIds = await checkbox({
+              message: "Select rules to pull:",
+              choices: rules.map((rule) => ({
+                name: `${c.bold(rule.name)} ${c.dim(`(${rule.sourcePath})`)}`,
+                value: rule.id,
+                checked: true,
+              })),
+            });
+            filteredRules = rules.filter((r) => selectedRuleIds.includes(r.id));
+            if (filteredRules.length > 0) {
+              info(
+                `Selected ${filteredRules.length} rule(s): ${filteredRules
+                  .map((r) => c.cyan(r.name))
+                  .join(", ")}`,
+              );
+            } else {
+              info("No rules selected.");
+            }
+          } catch {
+            info("Rule selection cancelled.");
+            process.exit(0);
+          }
+        } else {
+          console.log("");
+          console.log(
+            c.bold(`Discovered Rules (${c.green(String(rules.length))}):`),
+          );
+          rules.forEach((rule, idx) => {
+            console.log(
+              `  ${c.dim(`[${idx + 1}]`)} ${c.cyan(rule.name)} ${c.dim(
+                `(${rule.sourcePath})`,
+              )}`,
+            );
+          });
+          console.log("");
+        }
+      } else if (hasExplicitRule) {
+        info(
+          `Target rule(s): ${filteredRules
+            .map((r) => c.cyan(r.name))
+            .join(", ")}`,
+        );
+      }
+    }
+
+    // 2. Select skills before pulling
+    if (pullType !== "rules" && skills.length > 0 && command !== "sync") {
+      if (!hasExplicitSkill && !hasExplicitRule) {
+        if (process.stdin.isTTY && !values.yes) {
+          try {
+            const selectedSkillIds = await checkbox({
+              message: "Select skills to pull:",
+              choices: skills.map((skill) => ({
+                name: `${c.bold(skill.name)} ${c.dim(
+                  `(${skill.files.length} file${skill.files.length === 1 ? "" : "s"} at ${skill.baseDir})`,
+                )}`,
+                value: skill.id,
+                checked: true,
+              })),
+            });
+            filteredSkills = skills.filter((s) =>
+              selectedSkillIds.includes(s.id),
+            );
+            if (filteredSkills.length > 0) {
+              info(
+                `Selected ${filteredSkills.length} skill(s): ${filteredSkills
+                  .map((s) => c.cyan(s.name))
+                  .join(", ")}`,
+              );
+            } else {
+              info("No skills selected.");
+            }
+          } catch {
+            info("Skill selection cancelled.");
+            process.exit(0);
+          }
+        } else {
+          console.log("");
+          console.log(
+            c.bold(`Discovered Skills (${c.green(String(skills.length))}):`),
+          );
+          skills.forEach((skill, idx) => {
+            console.log(
+              `  ${c.dim(`[${idx + 1}]`)} ${c.magenta(skill.name)} ${c.dim(
+                `(${skill.files.length} file${skill.files.length === 1 ? "" : "s"} at ${skill.baseDir})`,
+              )}`,
+            );
+          });
+          console.log("");
+        }
+      } else if (hasExplicitSkill) {
+        info(
+          `Target skill(s): ${filteredSkills
+            .map((s) => c.cyan(s.name))
+            .join(", ")}`,
+        );
+      }
     }
 
     step(
       3,
       3,
       `Pulling ${filteredRules.length} rule(s) and ${filteredSkills.length} skill(s) into ${c.cyan(
-        selectedFormat
-      )} format...`
+        selectedFormat,
+      )} format...`,
     );
 
     if (filteredRules.length === 0 && filteredSkills.length === 0) {
@@ -317,11 +431,19 @@ async function main(): Promise<void> {
 
     divider();
     console.log(c.bold("Summary:"));
-    console.log(`  ${c.green("✔")} Pulled rules:   ${result.rulesPulled.length}`);
-    console.log(`  ${c.green("✔")} Pulled skills:  ${result.skillsPulled.length}`);
-    console.log(`  ${c.cyan("ℹ")} Files written:  ${result.filesWritten.length}`);
+    console.log(
+      `  ${c.green("✔")} Pulled rules:   ${result.rulesPulled.length}`,
+    );
+    console.log(
+      `  ${c.green("✔")} Pulled skills:  ${result.skillsPulled.length}`,
+    );
+    console.log(
+      `  ${c.cyan("ℹ")} Files written:  ${result.filesWritten.length}`,
+    );
     if (result.skipped.length > 0) {
-      console.log(`  ${c.yellow("⚠")} Skipped files:  ${result.skipped.length} (use --force to overwrite)`);
+      console.log(
+        `  ${c.yellow("⚠")} Skipped files:  ${result.skipped.length} (use --force to overwrite)`,
+      );
     }
     if (result.errors.length > 0) {
       console.log(`  ${c.red("✖")} Errors:         ${result.errors.length}`);
@@ -330,10 +452,16 @@ async function main(): Promise<void> {
     // Save project configuration state for easy syncing later
     if (!values["dry-run"]) {
       const mergedRules = Array.from(
-        new Set([...(projectConfig.installedRules || []), ...result.rulesPulled])
+        new Set([
+          ...(projectConfig.installedRules || []),
+          ...result.rulesPulled,
+        ]),
       );
       const mergedSkills = Array.from(
-        new Set([...(projectConfig.installedSkills || []), ...result.skillsPulled])
+        new Set([
+          ...(projectConfig.installedSkills || []),
+          ...result.skillsPulled,
+        ]),
       );
 
       await saveConfig({

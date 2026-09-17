@@ -110,6 +110,7 @@ crawler init --format cursor
 | `--force` | Overwrite existing local files | `false` |
 | `--dry-run` | Simulate actions without writing files | `false` |
 | `--token <token>` | Explicit GitHub Personal Access Token | Auto-detected from `gh` / env |
+| `-y, --yes` | Skip interactive prompt and pull all | `false` |
 | `-v, --version` | Display CLI version | |
 | `-h, --help` | Display help screen | |
 
