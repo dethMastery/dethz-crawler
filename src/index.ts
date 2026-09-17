@@ -31,8 +31,8 @@ function printHelp(): void {
   banner();
   console.log(`
 ${c.bold("USAGE:")}
-  ${c.cyan("bunx dethz-agent")} <command> [options]
-  ${c.cyan("dethz-agent")} <command> [options]
+  ${c.cyan("bunx crawler")} <command> [options]
+  ${c.cyan("crawler")} <command> [options]
 
 ${c.bold("COMMANDS:")}
   ${c.green("pull")}             Pull SKILL.md and rules from GitHub to local project (default)
@@ -57,19 +57,19 @@ ${c.bold("OPTIONS:")}
 
 ${c.bold("EXAMPLES:")}
   ${c.dim("# Pull all rules & skills from a repo")}
-  bunx dethz-agent pull --repo dethMastery/dotfiles
+  bunx crawler pull --repo dethMastery/dotfiles
 
   ${c.dim("# List what is available in a repo")}
-  bunx dethz-agent list --repo dethMastery/dotfiles
+  bunx crawler list --repo dethMastery/dotfiles
 
   ${c.dim("# Pull only rules into Cursor format (.cursor/rules/*.mdc)")}
-  bunx dethz-agent pull -r owner/repo --type rules --format cursor
+  bunx crawler pull -r owner/repo --type rules --format cursor
 
   ${c.dim("# Pull a specific skill")}
-  bunx dethz-agent pull -r owner/repo --skill web-search
+  bunx crawler pull -r owner/repo --skill web-search
 
   ${c.dim("# Re-sync all installed items")}
-  bunx dethz-agent sync
+  bunx crawler sync
 `);
 }
 
@@ -94,7 +94,7 @@ async function main(): Promise<void> {
   });
 
   if (values.version) {
-    console.log("dethz-agent v0.1.0");
+    console.log("crawler v0.1.0");
     return;
   }
 
@@ -151,7 +151,7 @@ async function main(): Promise<void> {
 
     if (!repoInput) {
       error("No GitHub repository specified. Use --repo <owner/repo>");
-      console.log(`\nRun ${c.cyan("dethz-agent --help")} for usage.`);
+      console.log(`\nRun ${c.cyan("crawler --help")} for usage.`);
       process.exit(1);
     }
   }
@@ -160,7 +160,7 @@ async function main(): Promise<void> {
   if (command === "sync") {
     if (!repoInput) {
       error(
-        "No previous repository configured in .agentrc.json. Run 'dethz-agent pull --repo <owner/repo>' first."
+        "No previous repository configured in .agentrc.json. Run 'crawler pull --repo <owner/repo>' first."
       );
       process.exit(1);
     }
@@ -351,7 +351,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  error(`Unknown command: "${rawCommand}". Run "dethz-agent --help" for help.`);
+  error(`Unknown command: "${rawCommand}". Run "crawler --help" for help.`);
   process.exit(1);
 }
 

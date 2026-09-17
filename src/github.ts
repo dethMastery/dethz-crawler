@@ -70,7 +70,7 @@ export async function getAuthToken(): Promise<string | undefined> {
  */
 function getHeaders(token?: string): Record<string, string> {
   const headers: Record<string, string> = {
-    "User-Agent": "dethz-agent-cli/0.1.0",
+    "User-Agent": "crawler-cli/0.1.0",
     Accept: "application/vnd.github.v3+json",
   };
 

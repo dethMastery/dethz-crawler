@@ -41,7 +41,7 @@ export function banner(): void {
   console.log("");
   console.log(
     c.bold(
-      c.cyan("⚡ dethz-agent") +
+      c.cyan("⚡ crawler") +
         c.gray(" v0.1.0") +
         c.dim(" - AI Agent Skills & Rules Sync")
     )

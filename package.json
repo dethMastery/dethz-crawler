@@ -1,9 +1,9 @@
 {
-  "name": "dethz-agent",
+  "name": "dethz-crawler",
   "version": "0.1.0",
   "description": "CLI tool to pull SKILL.md and agent rules from GitHub into local projects",
   "bin": {
-    "dethz-agent": "./dist/index.js"
+    "crawler": "./dist/index.js"
   },
   "main": "dist/index.js",
   "module": "src/index.ts",
