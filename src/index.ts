@@ -84,7 +84,7 @@ async function main(): Promise<void> {
   });
 
   if (values.version) {
-    console.log("dethz-crawler v0.1.0");
+    console.log("dethz-crawler v0.1.1");
     return;
   }
 

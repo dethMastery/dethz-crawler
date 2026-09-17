@@ -8,11 +8,11 @@ export function banner(): void {
     chalk.bold(
       chalk.cyan("⚡ dethz-crawler") +
         chalk.gray(" v0.1.0") +
-        chalk.dim(" - AI Agent Skills & Rules Sync")
-    )
+        chalk.dim(" - AI Agent Skills & Rules Sync"),
+    ),
   );
   console.log(
-    chalk.gray("   Pull SKILL.md & rules from GitHub into your local project")
+    chalk.gray("   Pull SKILL.md & rules from GitHub into your local project"),
   );
   console.log("");
 }
