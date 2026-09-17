@@ -1,7 +1,33 @@
 {
   "name": "dethz-agent",
+  "version": "0.1.0",
+  "description": "CLI tool to pull SKILL.md and agent rules from GitHub into local projects",
+  "bin": {
+    "dethz-agent": "./dist/index.js"
+  },
+  "main": "dist/index.js",
   "module": "src/index.ts",
   "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "test": "bun test",
+    "build": "bun build src/index.ts --target bun --outdir dist",
+    "prepublishOnly": "bun run build",
+    "lint": "bun run tsc --noEmit"
+  },
+  "keywords": [
+    "agent",
+    "skills",
+    "rules",
+    "ai",
+    "bun",
+    "cli",
+    "cursor",
+    "claude",
+    "antigravity"
+  ],
+  "author": "Suphakit P. <me@suphakit.net>",
+  "license": "MIT",
   "devDependencies": {
     "@types/bun": "latest"
   },

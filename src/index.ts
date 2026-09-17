@@ -1,1 +1,361 @@
-console.log("Hello via Bun!");
+#!/usr/bin/env bun
+import { parseArgs } from "node:util";
+import path from "node:path";
+import {
+  detectProjectFormat,
+  loadConfig,
+  saveConfig,
+} from "./config.ts";
+import {
+  fetchRawFile,
+  getAuthToken,
+  getDefaultBranch,
+  getRepoTree,
+  parseRepo,
+} from "./github.ts";
+import { getTargetDirectories, pullItems } from "./pull.ts";
+import { scanTree } from "./scanner.ts";
+import type { AgentFormat, PullItemType, PullOptions } from "./types.ts";
+import {
+  banner,
+  c,
+  divider,
+  error,
+  info,
+  step,
+  success,
+  warn,
+} from "./ui.ts";
+
+function printHelp(): void {
+  banner();
+  console.log(`
+${c.bold("USAGE:")}
+  ${c.cyan("bunx dethz-agent")} <command> [options]
+  ${c.cyan("dethz-agent")} <command> [options]
+
+${c.bold("COMMANDS:")}
+  ${c.green("pull")}             Pull SKILL.md and rules from GitHub to local project (default)
+  ${c.green("list")}             List available skills and rules in a GitHub repository
+  ${c.green("sync")}             Update/re-pull previously installed rules & skills
+  ${c.green("init")}             Initialize agent directories (.agent/rules, .agent/skills)
+  ${c.green("help")}             Show this help message
+
+${c.bold("OPTIONS:")}
+  ${c.yellow("-r, --repo")} <repo>     GitHub repository (${c.dim("owner/repo")} or URL)
+  ${c.yellow("-b, --branch")} <name>   Branch or commit ref (${c.dim("default: default branch")})
+  ${c.yellow("-t, --type")} <type>     What to pull: ${c.cyan("all")} | ${c.cyan("rules")} | ${c.cyan("skills")} (${c.dim("default: all")})
+  ${c.yellow("-f, --format")} <fmt>    Agent format: ${c.cyan("agent")} | ${c.cyan("agents")} | ${c.cyan("cursor")} | ${c.cyan("claude")}
+  ${c.yellow("-d, --target")} <dir>    Custom destination directory in local project
+  ${c.yellow("--rule")} <name>         Pull specific rule(s) (${c.dim("comma-separated or multiple")})
+  ${c.yellow("--skill")} <name>        Pull specific skill(s) (${c.dim("comma-separated or multiple")})
+  ${c.yellow("--force")}               Overwrite existing files without prompting
+  ${c.yellow("--dry-run")}             Simulate downloads without writing files
+  ${c.yellow("--token")} <token>       Explicit GitHub Personal Access Token
+  ${c.yellow("-v, --version")}         Show CLI version
+  ${c.yellow("-h, --help")}            Show help message
+
+${c.bold("EXAMPLES:")}
+  ${c.dim("# Pull all rules & skills from a repo")}
+  bunx dethz-agent pull --repo dethMastery/dotfiles
+
+  ${c.dim("# List what is available in a repo")}
+  bunx dethz-agent list --repo dethMastery/dotfiles
+
+  ${c.dim("# Pull only rules into Cursor format (.cursor/rules/*.mdc)")}
+  bunx dethz-agent pull -r owner/repo --type rules --format cursor
+
+  ${c.dim("# Pull a specific skill")}
+  bunx dethz-agent pull -r owner/repo --skill web-search
+
+  ${c.dim("# Re-sync all installed items")}
+  bunx dethz-agent sync
+`);
+}
+
+async function main(): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args: Bun.argv.slice(2),
+    options: {
+      repo: { type: "string", short: "r" },
+      branch: { type: "string", short: "b" },
+      type: { type: "string", short: "t", default: "all" },
+      format: { type: "string", short: "f" },
+      target: { type: "string", short: "d" },
+      rule: { type: "string", multiple: true },
+      skill: { type: "string", multiple: true },
+      force: { type: "boolean", default: false },
+      "dry-run": { type: "boolean", default: false },
+      token: { type: "string" },
+      help: { type: "boolean", short: "h", default: false },
+      version: { type: "boolean", short: "v", default: false },
+    },
+    allowPositionals: true,
+  });
+
+  if (values.version) {
+    console.log("dethz-agent v0.1.0");
+    return;
+  }
+
+  const rawCommand = positionals[0] || "pull";
+
+  if (values.help || rawCommand === "help") {
+    printHelp();
+    return;
+  }
+
+  const command = rawCommand.toLowerCase();
+
+  // Load existing project config
+  const projectConfig = await loadConfig();
+
+  // 1. INIT Command
+  if (command === "init") {
+    banner();
+    const format =
+      (values.format as AgentFormat) ||
+      (await detectProjectFormat()) ||
+      "agent";
+
+    const { rulesDir, skillsDir } = getTargetDirectories(process.cwd(), format);
+
+    info(`Initializing agent structure for format: ${c.cyan(format)}`);
+    // Create placeholder/folder by writing a .gitkeep or verifying
+    await Bun.write(path.resolve(rulesDir, ".gitkeep"), "");
+    await Bun.write(path.resolve(skillsDir, ".gitkeep"), "");
+
+    const newConfig = {
+      ...projectConfig,
+      format,
+      repo: values.repo || projectConfig.repo,
+    };
+    await saveConfig(newConfig);
+
+    success(`Created rules directory: ${c.dim(path.relative(process.cwd(), rulesDir))}`);
+    success(`Created skills directory: ${c.dim(path.relative(process.cwd(), skillsDir))}`);
+    success(`Saved configuration to ${c.dim(".agentrc.json")}`);
+    return;
+  }
+
+  // Determine repository
+  let repoInput = values.repo || projectConfig.repo;
+  if (!repoInput && (command === "pull" || command === "list")) {
+    banner();
+    if (process.stdin.isTTY) {
+      const answer = prompt(
+        `${c.cyan("?")} Enter GitHub repository (${c.dim("owner/repo")}): `
+      );
+      repoInput = answer?.trim() || undefined;
+    }
+
+    if (!repoInput) {
+      error("No GitHub repository specified. Use --repo <owner/repo>");
+      console.log(`\nRun ${c.cyan("dethz-agent --help")} for usage.`);
+      process.exit(1);
+    }
+  }
+
+  // For SYNC command, fallback to saved repo
+  if (command === "sync") {
+    if (!repoInput) {
+      error(
+        "No previous repository configured in .agentrc.json. Run 'dethz-agent pull --repo <owner/repo>' first."
+      );
+      process.exit(1);
+    }
+  }
+
+  const { owner, repo } = parseRepo(repoInput!);
+  const token = values.token || (await getAuthToken());
+
+  // 2. Fetch repository info and tree
+  banner();
+  step(1, 3, `Connecting to ${c.cyan(`${owner}/${repo}`)} on GitHub...`);
+
+  let branch = values.branch || projectConfig.branch;
+  if (!branch) {
+    try {
+      branch = await getDefaultBranch(owner, repo, token);
+    } catch (err: any) {
+      error(`Could not resolve default branch: ${err.message}`);
+      process.exit(1);
+    }
+  }
+  info(`Using branch: ${c.yellow(branch)}${token ? c.dim(" (authenticated)") : ""}`);
+
+  step(2, 3, "Scanning repository tree for SKILL.md and rules...");
+  let treeRes;
+  try {
+    treeRes = await getRepoTree(owner, repo, branch, token);
+  } catch (err: any) {
+    error(`Failed to fetch tree: ${err.message}`);
+    process.exit(1);
+  }
+
+  const { rules, skills } = scanTree(treeRes.tree, owner, repo, branch);
+
+  // 3. LIST Command
+  if (command === "list") {
+    divider();
+    console.log(
+      c.bold(
+        `Found ${c.green(String(rules.length))} rule(s) and ${c.green(
+          String(skills.length)
+        )} skill(s) in ${c.cyan(`${owner}/${repo}@${branch}`)}:`
+      )
+    );
+    console.log("");
+
+    console.log(c.bold(c.underline("RULES:")));
+    if (rules.length === 0) {
+      console.log(c.dim("  (no rules found)"));
+    } else {
+      for (const rule of rules) {
+        console.log(`  ${c.cyan("•")} ${c.bold(rule.name)} ${c.dim(`(${rule.sourcePath})`)}`);
+      }
+    }
+
+    console.log("");
+    console.log(c.bold(c.underline("SKILLS:")));
+    if (skills.length === 0) {
+      console.log(c.dim("  (no skills found)"));
+    } else {
+      for (const skill of skills) {
+        console.log(
+          `  ${c.magenta("•")} ${c.bold(skill.name)} ${c.dim(
+            `(${skill.files.length} file${skill.files.length === 1 ? "" : "s"} at ${skill.baseDir})`
+          )}`
+        );
+      }
+    }
+    divider();
+    return;
+  }
+
+  // 4. PULL or SYNC Command
+  if (command === "pull" || command === "sync") {
+    const pullType = (values.type as PullItemType) || "all";
+    const selectedFormat =
+      (values.format as AgentFormat) ||
+      projectConfig.format ||
+      (await detectProjectFormat());
+
+    const hasExplicitRule = Boolean(values.rule && values.rule.length > 0);
+    const hasExplicitSkill = Boolean(values.skill && values.skill.length > 0);
+
+    // Filter rules
+    let filteredRules = rules;
+    if (pullType === "skills" || (hasExplicitSkill && !hasExplicitRule)) {
+      filteredRules = [];
+    } else if (hasExplicitRule) {
+      const requestedRules = (values.rule || [])
+        .flatMap((r) => r.split(","))
+        .map((r) => r.trim().toLowerCase());
+      filteredRules = rules.filter(
+        (r) =>
+          requestedRules.includes(r.name.toLowerCase()) ||
+          requestedRules.includes(r.id)
+      );
+    } else if (command === "sync" && projectConfig.installedRules) {
+      filteredRules = rules.filter((r) =>
+        projectConfig.installedRules?.includes(r.name)
+      );
+    }
+
+    // Filter skills
+    let filteredSkills = skills;
+    if (pullType === "rules" || (hasExplicitRule && !hasExplicitSkill)) {
+      filteredSkills = [];
+    } else if (hasExplicitSkill) {
+      const requestedSkills = (values.skill || [])
+        .flatMap((s) => s.split(","))
+        .map((s) => s.trim().toLowerCase());
+      filteredSkills = skills.filter(
+        (s) =>
+          requestedSkills.includes(s.name.toLowerCase()) ||
+          requestedSkills.includes(s.id)
+      );
+    } else if (command === "sync" && projectConfig.installedSkills) {
+      filteredSkills = skills.filter((s) =>
+        projectConfig.installedSkills?.includes(s.name)
+      );
+    }
+
+    step(
+      3,
+      3,
+      `Pulling ${filteredRules.length} rule(s) and ${filteredSkills.length} skill(s) into ${c.cyan(
+        selectedFormat
+      )} format...`
+    );
+
+    if (filteredRules.length === 0 && filteredSkills.length === 0) {
+      warn("No matching rules or skills found to pull.");
+      return;
+    }
+
+    const pullOptions: PullOptions = {
+      repo: `${owner}/${repo}`,
+      branch,
+      type: pullType,
+      format: selectedFormat,
+      targetDir: values.target,
+      force: values.force,
+      dryRun: values["dry-run"],
+    };
+
+    const result = await pullItems({
+      owner,
+      repo,
+      branch,
+      token,
+      rules: filteredRules,
+      skills: filteredSkills,
+      options: pullOptions,
+    });
+
+    divider();
+    console.log(c.bold("Summary:"));
+    console.log(`  ${c.green("✔")} Pulled rules:   ${result.rulesPulled.length}`);
+    console.log(`  ${c.green("✔")} Pulled skills:  ${result.skillsPulled.length}`);
+    console.log(`  ${c.cyan("ℹ")} Files written:  ${result.filesWritten.length}`);
+    if (result.skipped.length > 0) {
+      console.log(`  ${c.yellow("⚠")} Skipped files:  ${result.skipped.length} (use --force to overwrite)`);
+    }
+    if (result.errors.length > 0) {
+      console.log(`  ${c.red("✖")} Errors:         ${result.errors.length}`);
+    }
+
+    // Save project configuration state for easy syncing later
+    if (!values["dry-run"]) {
+      const mergedRules = Array.from(
+        new Set([...(projectConfig.installedRules || []), ...result.rulesPulled])
+      );
+      const mergedSkills = Array.from(
+        new Set([...(projectConfig.installedSkills || []), ...result.skillsPulled])
+      );
+
+      await saveConfig({
+        repo: `${owner}/${repo}`,
+        branch,
+        format: selectedFormat,
+        lastSync: new Date().toISOString(),
+        installedRules: mergedRules,
+        installedSkills: mergedSkills,
+      });
+    }
+
+    console.log("");
+    success("Done! Your agent rules and skills are ready.");
+    return;
+  }
+
+  error(`Unknown command: "${rawCommand}". Run "dethz-agent --help" for help.`);
+  process.exit(1);
+}
+
+main().catch((err) => {
+  error(`Unexpected error: ${err.message || err}`);
+  process.exit(1);
+});
