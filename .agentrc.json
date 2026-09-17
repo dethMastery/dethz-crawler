@@ -1,0 +1,10 @@
+{
+  "repo": "kizuna-inc/kz-skill",
+  "branch": "main",
+  "format": "agent",
+  "lastSync": "2026-09-17T11:35:17.086Z",
+  "installedRules": [],
+  "installedSkills": [
+    "workspace-allow"
+  ]
+}
