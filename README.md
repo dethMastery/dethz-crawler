@@ -1,4 +1,4 @@
-# ⚡ crawler
+# ⚡ dethz-crawler
 
 > Fast, lightweight CLI tool to pull `SKILL.md` (skills) and rules from GitHub directly into your local project.
 
@@ -16,7 +16,7 @@ Built natively with **[Bun](https://bun.com)** and TypeScript. Zero external run
   - `.claude/` / `CLAUDE.md` (Anthropic Claude convention)
 - 🧠 **Smart Skill Tree Discovery**: Automatically discovers any `SKILL.md` along with its auxiliary files (`scripts/`, `references/`, `resources/`).
 - 🔑 **Automatic GitHub Auth**: Dynamically checks `GITHUB_TOKEN` or `gh auth token` via `gh` CLI so you never hit GitHub rate limits, even for private repositories.
-- 🔄 **One-Command Sync**: Re-sync your local skills and rules anytime with `crawler sync`.
+- 🔄 **One-Command Sync**: Re-sync your local skills and rules anytime with `dethz-crawler sync`.
 - 🛡️ **Safe by Default**: Won't overwrite existing local files unless you explicitly pass `--force`. Includes `--dry-run` to preview changes safely.
 
 ---
@@ -27,16 +27,16 @@ Run directly with `bunx`:
 
 ```bash
 # Pull all rules and skills from a repository
-bunx crawler pull --repo owner/repo
+bunx dethz-crawler pull --repo owner/repo
 
 # List what is available before pulling
-bunx crawler list --repo owner/repo
+bunx dethz-crawler list --repo owner/repo
 ```
 
 Or install globally in your environment:
 
 ```bash
-bun add -g crawler
+bun add -g dethz-crawler
 ```
 
 ---
@@ -48,39 +48,39 @@ Pull rules and skills from a remote GitHub repository.
 
 ```bash
 # Pull everything into default format (.agent/)
-crawler pull --repo owner/repo
+dethz-crawler pull --repo owner/repo
 
 # Pull only skills
-crawler pull -r owner/repo --type skills
+dethz-crawler pull -r owner/repo --type skills
 
 # Pull a specific skill
-crawler pull -r owner/repo --skill web-search
+dethz-crawler pull -r owner/repo --skill web-search
 
 # Pull only rules
-crawler pull -r owner/repo --type rules
+dethz-crawler pull -r owner/repo --type rules
 
 # Pull rules in Cursor format (.cursor/rules/*.mdc)
-crawler pull -r owner/repo --format cursor
+dethz-crawler pull -r owner/repo --format cursor
 
 # Force overwrite existing files
-crawler pull -r owner/repo --force
+dethz-crawler pull -r owner/repo --force
 
 # Preview actions without writing anything
-crawler pull -r owner/repo --dry-run
+dethz-crawler pull -r owner/repo --dry-run
 ```
 
 ### 2. `list`
 Discover and preview all rules and skills available in a GitHub repository without downloading.
 
 ```bash
-crawler list --repo owner/repo
+dethz-crawler list --repo owner/repo
 ```
 
 ### 3. `sync`
 Re-fetch and update all previously pulled rules and skills recorded in `.agentrc.json`.
 
 ```bash
-crawler sync
+dethz-crawler sync
 ```
 
 ### 4. `init`
@@ -88,10 +88,10 @@ Initialize local agent directories and configuration.
 
 ```bash
 # Initialize universal format (.agent/rules, .agent/skills)
-crawler init
+dethz-crawler init
 
 # Initialize Cursor format (.cursor/rules, .cursor/skills)
-crawler init --format cursor
+dethz-crawler init --format cursor
 ```
 
 ---
@@ -118,7 +118,7 @@ crawler init --format cursor
 
 ## Configuration (`.agentrc.json`)
 
-When you pull or initialize rules, `crawler` stores project settings in `.agentrc.json`:
+When you pull or initialize rules, `dethz-crawler` stores project settings in `.agentrc.json`:
 
 ```json
 {
@@ -131,7 +131,7 @@ When you pull or initialize rules, `crawler` stores project settings in `.agentr
 }
 ```
 
-Running `crawler sync` will re-pull all items listed in `installedRules` and `installedSkills` from the remote repository.
+Running `dethz-crawler sync` will re-pull all items listed in `installedRules` and `installedSkills` from the remote repository.
 
 ---
 

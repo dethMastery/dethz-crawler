@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "CLI tool to pull SKILL.md and agent rules from GitHub into local projects",
   "bin": {
-    "crawler": "./dist/index.js"
+    "dethz-crawler": "./dist/index.js"
   },
   "main": "dist/index.js",
   "module": "src/index.ts",

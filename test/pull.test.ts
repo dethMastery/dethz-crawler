@@ -69,7 +69,7 @@ describe("pull", () => {
 
   describe("config", () => {
     it("should save and load config properly using Bun.file", async () => {
-      const tempDir = path.resolve(os.tmpdir(), `crawler-test-${Date.now()}`);
+      const tempDir = path.resolve(os.tmpdir(), `dethz-crawler-test-${Date.now()}`);
       const testConfig = {
         repo: "dethMastery/test-repo",
         format: "agent" as const,
