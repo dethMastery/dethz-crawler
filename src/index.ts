@@ -12,7 +12,7 @@ import {
 import { getTargetDirectories, pullItems } from "./pull.ts";
 import { scanTree } from "./scanner.ts";
 import type { AgentFormat, PullItemType, PullOptions } from "./types.ts";
-import { checkbox, input } from "@inquirer/prompts";
+import { checkbox, confirm, input } from "@inquirer/prompts";
 import { banner, c, divider, error, info, step, success, warn } from "./ui.ts";
 
 function printHelp(): void {
@@ -96,13 +96,13 @@ async function main(): Promise<void> {
   }
 
   const command = rawCommand.toLowerCase();
+  banner();
 
   // Load existing project config
   const projectConfig = await loadConfig();
 
   // 1. INIT Command
   if (command === "init") {
-    banner();
     const format =
       (values.format as AgentFormat) ||
       (await detectProjectFormat()) ||
@@ -133,26 +133,50 @@ async function main(): Promise<void> {
   }
 
   // Determine repository
-  let repoInput = values.repo || projectConfig.repo;
-  if (!repoInput && (command === "pull" || command === "list")) {
-    banner();
-    if (process.stdin.isTTY) {
+  let repoInput = values.repo;
+
+  if (command === "sync") {
+    repoInput = values.repo || projectConfig.repo;
+    if (!repoInput) {
+      error(
+        "No previous repository configured in .agentrc.json. Run 'dethz-crawler pull --repo <owner/repo>' first.",
+      );
+      process.exit(1);
+    }
+  } else if (!repoInput && (command === "pull" || command === "list")) {
+    if (process.stdin.isTTY && !values.yes) {
       try {
-        repoInput = await input({
-          message: "Enter GitHub repository (owner/repo):",
-          validate: (val) => {
-            try {
-              parseRepo(val);
-              return true;
-            } catch (err: any) {
-              return err.message || "Invalid repository format";
-            }
-          },
-        });
-        repoInput = repoInput.trim() || undefined;
+        if (projectConfig.repo) {
+          const useSaved = await confirm({
+            message: `Pull from configured repository (${c.cyan(projectConfig.repo)})?`,
+            default: true,
+          });
+
+          if (useSaved) {
+            repoInput = projectConfig.repo;
+          }
+        }
+
+        if (!repoInput) {
+          repoInput = await input({
+            message: "Enter GitHub repository (owner/repo):",
+            validate: (val) => {
+              try {
+                parseRepo(val);
+                return true;
+              } catch (err: any) {
+                return err.message || "Invalid repository format";
+              }
+            },
+          });
+          repoInput = repoInput.trim() || undefined;
+        }
       } catch {
         // user aborted
       }
+    } else {
+      // Non-interactive or with -y / --yes
+      repoInput = projectConfig.repo;
     }
 
     if (!repoInput) {
@@ -162,24 +186,15 @@ async function main(): Promise<void> {
     }
   }
 
-  // For SYNC command, fallback to saved repo
-  if (command === "sync") {
-    if (!repoInput) {
-      error(
-        "No previous repository configured in .agentrc.json. Run 'dethz-crawler pull --repo <owner/repo>' first.",
-      );
-      process.exit(1);
-    }
-  }
-
   const { owner, repo } = parseRepo(repoInput!);
   const token = values.token || (await getAuthToken());
 
   // 2. Fetch repository info and tree
-  banner();
   step(1, 3, `Connecting to ${c.cyan(`${owner}/${repo}`)} on GitHub...`);
 
-  let branch = values.branch || projectConfig.branch;
+  let branch =
+    values.branch ||
+    (repoInput === projectConfig.repo ? projectConfig.branch : undefined);
   if (!branch) {
     try {
       branch = await getDefaultBranch(owner, repo, token);
@@ -479,7 +494,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  error(`Unknown command: "${rawCommand}". Run "dethz-crawler --help" for help.`);
+  error(
+    `Unknown command: "${rawCommand}". Run "dethz-crawler --help" for help.`,
+  );
   process.exit(1);
 }
 
