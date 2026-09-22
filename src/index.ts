@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { parseArgs } from "node:util";
 import path from "node:path";
 import {
