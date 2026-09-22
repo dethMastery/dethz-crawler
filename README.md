@@ -21,6 +21,7 @@ Built natively with **[Bun](https://bun.com)** and TypeScript. Zero external run
 - 🧠 **Smart Skill Tree Discovery**: Automatically discovers any `SKILL.md` along with its auxiliary files (`scripts/`, `references/`, `resources/`).
 - 🔑 **Automatic GitHub Auth**: Dynamically checks `GITHUB_TOKEN` or `gh auth token` via `gh` CLI so you never hit GitHub rate limits, even for private repositories.
 - 🔄 **One-Command Sync**: Re-sync your local skills and rules anytime across all configured agents with `dethz-crawler sync`.
+- 🔔 **Automatic Update Check**: Non-blocking background check notifies you when a newer version is published on npm.
 - 🛡️ **Safe by Default**: Won't overwrite existing local files unless you explicitly pass `--force`. Includes `--dry-run` to preview changes safely.
 
 ---
@@ -101,6 +102,13 @@ dethz-crawler init
 dethz-crawler init -f claude,cursor
 ```
 
+### 5. `update`
+Check npm registry for newer versions of `dethz-crawler`.
+
+```bash
+dethz-crawler update
+```
+
 ---
 
 ## Options & Flags
@@ -114,6 +122,7 @@ dethz-crawler init -f claude,cursor
 | `-d, --target <dir>` | Custom local directory destination | Current project |
 | `--rule <name>` | Pull specific rule(s) (comma-separated or multiple) | All discovered |
 | `--skill <name>` | Pull specific skill(s) (comma-separated or multiple) | All discovered |
+| `--check-update` | Check npm registry for newer CLI version | `false` |
 | `--force` | Overwrite existing local files | `false` |
 | `--dry-run` | Simulate actions without writing files | `false` |
 | `--token <token>` | Explicit GitHub Personal Access Token | Auto-detected from `gh` / env |

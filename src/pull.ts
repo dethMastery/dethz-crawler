@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fetchRawFile } from "./github.ts";
 import type {
@@ -86,7 +87,7 @@ export function formatRuleFilename(
 /**
  * Determine the destination path for a rule given the format and root settings.
  */
-function resolveRuleDestination(
+export function resolveRuleDestination(
   baseDir: string,
   rulesDir: string,
   filename: string,
@@ -133,6 +134,58 @@ function resolveRuleDestination(
   }
 
   return path.resolve(rulesDir, filename);
+}
+
+/**
+ * Check if a skill is already installed locally in the project.
+ */
+export function isSkillInstalled(
+  skillName: string,
+  formats: AgentFormat[],
+  baseDir = process.cwd(),
+  installedSkills: string[] = []
+): boolean {
+  if (installedSkills.includes(skillName)) {
+    return true;
+  }
+  const checkFormats = formats.length > 0 ? formats : ["agent" as AgentFormat];
+  for (const fmt of checkFormats) {
+    const { skillsDir } = getTargetDirectories(baseDir, fmt);
+    if (existsSync(path.resolve(skillsDir, skillName))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Check if a rule is already installed locally in the project.
+ */
+export function isRuleInstalled(
+  rule: RuleItem,
+  formats: AgentFormat[],
+  baseDir = process.cwd(),
+  installedRules: string[] = []
+): boolean {
+  if (installedRules.includes(rule.name)) {
+    return true;
+  }
+  const checkFormats = formats.length > 0 ? formats : ["agent" as AgentFormat];
+  for (const fmt of checkFormats) {
+    const { rulesDir } = getTargetDirectories(baseDir, fmt);
+    const filename = formatRuleFilename(rule.filename, fmt);
+    const destPath = resolveRuleDestination(
+      baseDir,
+      rulesDir,
+      filename,
+      rule.name,
+      fmt
+    );
+    if (existsSync(destPath)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

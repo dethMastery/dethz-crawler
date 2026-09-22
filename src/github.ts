@@ -1,4 +1,5 @@
 import type { GitHubTreeResponse, RepoInfo } from "./types.ts";
+import { PACKAGE_NAME, VERSION } from "./version.ts";
 
 /**
  * Parse a GitHub repository specifier.
@@ -70,7 +71,7 @@ export async function getAuthToken(): Promise<string | undefined> {
  */
 function getHeaders(token?: string): Record<string, string> {
   const headers: Record<string, string> = {
-    "User-Agent": "dethz-crawler/0.2.0",
+    "User-Agent": `${PACKAGE_NAME}/${VERSION}`,
     Accept: "application/vnd.github.v3+json",
   };
 

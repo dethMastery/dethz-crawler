@@ -13,7 +13,12 @@ import {
   getRepoTree,
   parseRepo,
 } from "./github.ts";
-import { getTargetDirectories, pullItems } from "./pull.ts";
+import {
+  getTargetDirectories,
+  isRuleInstalled,
+  isSkillInstalled,
+  pullItems,
+} from "./pull.ts";
 import { scanTree } from "./scanner.ts";
 import {
   AGENT_FORMATS,
@@ -21,7 +26,9 @@ import {
   type PullItemType,
   type PullOptions,
 } from "./types.ts";
-import { checkbox, confirm, input } from "@inquirer/prompts";
+import { checkPackageUpdate, displayUpdateNotification } from "./update.ts";
+import { PACKAGE_NAME, VERSION } from "./version.ts";
+import { Separator, checkbox, confirm, input } from "@inquirer/prompts";
 import { banner, c, divider, error, info, step, success, warn } from "./ui.ts";
 
 const AGENT_LABELS: Record<AgentFormat, { name: string; hint: string }> = {
@@ -107,6 +114,7 @@ ${c.bold("COMMANDS:")}
   ${c.green("list")}             List available skills and rules in a GitHub repository
   ${c.green("sync")}             Update/re-pull previously installed rules & skills
   ${c.green("init")}             Initialize agent directories (.claude, .cursor, .agent, etc.)
+  ${c.green("update")}           Check for updates to dethz-crawler package
   ${c.green("help")}             Show this help message
 
 ${c.bold("OPTIONS:")}
@@ -121,6 +129,7 @@ ${c.bold("OPTIONS:")}
   ${c.yellow("--force")}               Overwrite existing files without prompting
   ${c.yellow("--dry-run")}             Simulate downloads without writing files
   ${c.yellow("--token")} <token>       Explicit GitHub Personal Access Token
+  ${c.yellow("--check-update")}        Check npm registry for newer version
   ${c.yellow("-y, --yes")}             Skip interactive selection (pull all)
   ${c.yellow("-v, --version")}         Show CLI version
   ${c.yellow("-h, --help")}            Show help message
@@ -137,6 +146,9 @@ ${c.bold("EXAMPLES:")}
 
   ${c.dim("# Pull only rules into Claude and Cursor")}
   bunx dethz-crawler pull -r owner/repo --type rules -f claude,cursor
+
+  ${c.dim("# Check for CLI package updates")}
+  bunx dethz-crawler update
 
   ${c.dim("# Pull a specific skill")}
   bunx dethz-crawler pull -r owner/repo --skill web-search
@@ -160,6 +172,7 @@ async function main(): Promise<void> {
       force: { type: "boolean", default: false },
       "dry-run": { type: "boolean", default: false },
       token: { type: "string" },
+      "check-update": { type: "boolean", default: false },
       yes: { type: "boolean", short: "y", default: false },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
@@ -168,11 +181,11 @@ async function main(): Promise<void> {
   });
 
   if (values.version) {
-    console.log("dethz-crawler v0.2.0");
+    console.log(`${PACKAGE_NAME} v${VERSION}`);
     return;
   }
 
-  const rawCommand = positionals[0] || "pull";
+  const rawCommand = positionals[0] || (values["check-update"] ? "update" : "pull");
 
   if (values.help || rawCommand === "help") {
     printHelp();
@@ -181,6 +194,36 @@ async function main(): Promise<void> {
 
   const command = rawCommand.toLowerCase();
   banner();
+
+  // Check for updates command
+  if (values["check-update"] || command === "update" || command === "check-update") {
+    step(1, 1, `Checking npm registry for ${PACKAGE_NAME} updates...`);
+    const update = await checkPackageUpdate(VERSION, true);
+    if (!update) {
+      warn("Unable to check for updates. Please check your network connection.");
+      return;
+    }
+    if (update.hasUpdate) {
+      displayUpdateNotification(update);
+    } else {
+      success(
+        `You are already using the latest version of ${PACKAGE_NAME} (${c.cyan(`v${VERSION}`)}).`,
+      );
+    }
+    return;
+  }
+
+  // Launch background update check for non-blocking notification
+  const updatePromise = checkPackageUpdate(VERSION, false).catch(() => null);
+
+  async function notifyIfUpdateAvailable(): Promise<void> {
+    try {
+      const update = await updatePromise;
+      if (update?.hasUpdate) {
+        displayUpdateNotification(update);
+      }
+    } catch {}
+  }
 
   // Load existing project config
   const projectConfig = await loadConfig();
@@ -226,6 +269,7 @@ async function main(): Promise<void> {
     await saveConfig(newConfig);
 
     success(`Saved configuration to ${c.dim(".agentrc.json")}`);
+    await notifyIfUpdateAvailable();
     return;
   }
 
@@ -327,13 +371,25 @@ async function main(): Promise<void> {
     );
     console.log("");
 
+    const listFormats =
+      projectConfig.formats ||
+      (projectConfig.format ? [projectConfig.format] : ["agent" as AgentFormat]);
+
     console.log(c.bold(c.underline("RULES:")));
     if (rules.length === 0) {
       console.log(c.dim("  (no rules found)"));
     } else {
       for (const rule of rules) {
+        const isInstalled = isRuleInstalled(
+          rule,
+          listFormats,
+          process.cwd(),
+          projectConfig.installedRules,
+        );
         console.log(
-          `  ${c.cyan("•")} ${c.bold(rule.name)} ${c.dim(`(${rule.sourcePath})`)}`,
+          `  ${c.cyan("•")} ${c.bold(rule.name)} ${c.dim(`(${rule.sourcePath})`)}${
+            isInstalled ? ` ${c.green("[installed]")}` : ""
+          }`,
         );
       }
     }
@@ -344,14 +400,21 @@ async function main(): Promise<void> {
       console.log(c.dim("  (no skills found)"));
     } else {
       for (const skill of skills) {
+        const isInstalled = isSkillInstalled(
+          skill.name,
+          listFormats,
+          process.cwd(),
+          projectConfig.installedSkills,
+        );
         console.log(
           `  ${c.magenta("•")} ${c.bold(skill.name)} ${c.dim(
             `(${skill.files.length} file${skill.files.length === 1 ? "" : "s"} at ${skill.baseDir})`,
-          )}`,
+          )}${isInstalled ? ` ${c.green("[installed]")}` : ""}`,
         );
       }
     }
     divider();
+    await notifyIfUpdateAvailable();
     return;
   }
 
@@ -425,15 +488,62 @@ async function main(): Promise<void> {
     // 1. Select rules before pulling
     if (pullType !== "skills" && rules.length > 0 && command !== "sync") {
       if (!hasExplicitRule && !hasExplicitSkill) {
+        // Partition rules into remote (new) and local (already installed)
+        const remoteRules = rules.filter(
+          (r) =>
+            !isRuleInstalled(
+              r,
+              selectedFormats,
+              process.cwd(),
+              projectConfig.installedRules,
+            ),
+        );
+        const localRules = rules.filter((r) =>
+          isRuleInstalled(
+            r,
+            selectedFormats,
+            process.cwd(),
+            projectConfig.installedRules,
+          ),
+        );
+
         if (process.stdin.isTTY && !values.yes) {
           try {
+            const choices = [];
+
+            if (remoteRules.length > 0) {
+              choices.push(
+                new Separator(
+                  c.cyan(`── Remote Rules (${remoteRules.length}) ──`),
+                ),
+              );
+              for (const rule of remoteRules) {
+                choices.push({
+                  name: `${c.bold(rule.name)} ${c.dim(`(${rule.sourcePath})`)}`,
+                  value: rule.id,
+                  checked: true,
+                });
+              }
+            }
+
+            if (localRules.length > 0) {
+              choices.push(
+                new Separator(
+                  c.gray(`── Installed / Local Rules (${localRules.length}) ──`),
+                ),
+              );
+              for (const rule of localRules) {
+                choices.push({
+                  name: `${c.dim(rule.name)} ${c.dim(`(${rule.sourcePath})`)} ${c.yellow("[installed]")}`,
+                  value: rule.id,
+                  checked: false,
+                });
+              }
+            }
+
             const selectedRuleIds = await checkbox({
               message: "Select rules to pull:",
-              choices: rules.map((rule) => ({
-                name: `${c.bold(rule.name)} ${c.dim(`(${rule.sourcePath})`)}`,
-                value: rule.id,
-                checked: true,
-              })),
+              choices,
             });
             filteredRules = rules.filter((r) => selectedRuleIds.includes(r.id));
             if (filteredRules.length > 0) {
@@ -451,16 +561,34 @@ async function main(): Promise<void> {
           }
         } else {
           console.log("");
-          console.log(
-            c.bold(`Discovered Rules (${c.green(String(rules.length))}):`),
-          );
-          rules.forEach((rule, idx) => {
+          if (remoteRules.length > 0) {
             console.log(
-              `  ${c.dim(`[${idx + 1}]`)} ${c.cyan(rule.name)} ${c.dim(
-                `(${rule.sourcePath})`,
-              )}`,
+              c.bold(
+                `Discovered Remote Rules (${c.green(String(remoteRules.length))}):`,
+              ),
             );
-          });
+            remoteRules.forEach((rule, idx) => {
+              console.log(
+                `  ${c.dim(`[${idx + 1}]`)} ${c.cyan(rule.name)} ${c.dim(
+                  `(${rule.sourcePath})`,
+                )}`,
+              );
+            });
+          }
+          if (localRules.length > 0) {
+            console.log(
+              c.bold(
+                `Installed / Local Rules (${c.yellow(String(localRules.length))}):`,
+              ),
+            );
+            localRules.forEach((rule, idx) => {
+              console.log(
+                `  ${c.dim(`[${idx + 1}]`)} ${c.dim(rule.name)} ${c.dim(
+                  `(${rule.sourcePath})`,
+                )} ${c.yellow("[installed]")}`,
+              );
+            });
+          }
           console.log("");
         }
       } else if (hasExplicitRule) {
@@ -475,17 +603,66 @@ async function main(): Promise<void> {
     // 2. Select skills before pulling
     if (pullType !== "rules" && skills.length > 0 && command !== "sync") {
       if (!hasExplicitSkill && !hasExplicitRule) {
+        // Partition skills into remote (new) and local (already installed)
+        const remoteSkills = skills.filter(
+          (s) =>
+            !isSkillInstalled(
+              s.name,
+              selectedFormats,
+              process.cwd(),
+              projectConfig.installedSkills,
+            ),
+        );
+        const localSkills = skills.filter((s) =>
+          isSkillInstalled(
+            s.name,
+            selectedFormats,
+            process.cwd(),
+            projectConfig.installedSkills,
+          ),
+        );
+
         if (process.stdin.isTTY && !values.yes) {
           try {
+            const choices = [];
+
+            if (remoteSkills.length > 0) {
+              choices.push(
+                new Separator(
+                  c.cyan(`── Remote Skills (${remoteSkills.length}) ──`),
+                ),
+              );
+              for (const skill of remoteSkills) {
+                choices.push({
+                  name: `${c.bold(skill.name)} ${c.dim(
+                    `(${skill.files.length} file${skill.files.length === 1 ? "" : "s"} at ${skill.baseDir})`,
+                  )}`,
+                  value: skill.id,
+                  checked: true,
+                });
+              }
+            }
+
+            if (localSkills.length > 0) {
+              choices.push(
+                new Separator(
+                  c.gray(`── Installed / Local Skills (${localSkills.length}) ──`),
+                ),
+              );
+              for (const skill of localSkills) {
+                choices.push({
+                  name: `${c.dim(skill.name)} ${c.dim(
+                    `(${skill.files.length} file${skill.files.length === 1 ? "" : "s"} at ${skill.baseDir})`,
+                  )} ${c.yellow("[installed]")}`,
+                  value: skill.id,
+                  checked: false,
+                });
+              }
+            }
+
             const selectedSkillIds = await checkbox({
               message: "Select skills to pull:",
-              choices: skills.map((skill) => ({
-                name: `${c.bold(skill.name)} ${c.dim(
-                  `(${skill.files.length} file${skill.files.length === 1 ? "" : "s"} at ${skill.baseDir})`,
-                )}`,
-                value: skill.id,
-                checked: true,
-              })),
+              choices,
             });
             filteredSkills = skills.filter((s) =>
               selectedSkillIds.includes(s.id),
@@ -505,16 +682,34 @@ async function main(): Promise<void> {
           }
         } else {
           console.log("");
-          console.log(
-            c.bold(`Discovered Skills (${c.green(String(skills.length))}):`),
-          );
-          skills.forEach((skill, idx) => {
+          if (remoteSkills.length > 0) {
             console.log(
-              `  ${c.dim(`[${idx + 1}]`)} ${c.magenta(skill.name)} ${c.dim(
-                `(${skill.files.length} file${skill.files.length === 1 ? "" : "s"} at ${skill.baseDir})`,
-              )}`,
+              c.bold(
+                `Discovered Remote Skills (${c.green(String(remoteSkills.length))}):`,
+              ),
             );
-          });
+            remoteSkills.forEach((skill, idx) => {
+              console.log(
+                `  ${c.dim(`[${idx + 1}]`)} ${c.magenta(skill.name)} ${c.dim(
+                  `(${skill.files.length} file${skill.files.length === 1 ? "" : "s"} at ${skill.baseDir})`,
+                )}`,
+              );
+            });
+          }
+          if (localSkills.length > 0) {
+            console.log(
+              c.bold(
+                `Installed / Local Skills (${c.yellow(String(localSkills.length))}):`,
+              ),
+            );
+            localSkills.forEach((skill, idx) => {
+              console.log(
+                `  ${c.dim(`[${idx + 1}]`)} ${c.dim(skill.name)} ${c.dim(
+                  `(${skill.files.length} file${skill.files.length === 1 ? "" : "s"} at ${skill.baseDir})`,
+                )} ${c.yellow("[installed]")}`,
+              );
+            });
+          }
           console.log("");
         }
       } else if (hasExplicitSkill) {
@@ -608,6 +803,7 @@ async function main(): Promise<void> {
 
     console.log("");
     success("Done! Your agent rules and skills are ready.");
+    await notifyIfUpdateAvailable();
     return;
   }
 

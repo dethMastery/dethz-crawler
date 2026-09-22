@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { PACKAGE_NAME, VERSION } from "./version.ts";
 
 export const c = chalk;
 
@@ -6,8 +7,8 @@ export function banner(): void {
   console.log("");
   console.log(
     chalk.bold(
-      chalk.cyan("⚡ dethz-crawler") +
-        chalk.gray(" v0.2.0") +
+      chalk.cyan(`⚡ ${PACKAGE_NAME}`) +
+        chalk.gray(` v${VERSION}`) +
         chalk.dim(" - AI Agent Skills & Rules Sync"),
     ),
   );

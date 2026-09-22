@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { parseRepo } from "../src/github.ts";
-import { formatRuleFilename, getTargetDirectories } from "../src/pull.ts";
+import {
+  formatRuleFilename,
+  getTargetDirectories,
+  isRuleInstalled,
+  isSkillInstalled,
+} from "../src/pull.ts";
 import { loadConfig, saveConfig } from "../src/config.ts";
 import path from "node:path";
 import os from "node:os";
@@ -181,5 +186,50 @@ describe("pull", () => {
       expect(result.filesWritten.some((f) => f.includes(".cursor/skills"))).toBe(true);
     });
   });
+
+  describe("isSkillInstalled and isRuleInstalled", () => {
+    it("should detect installed skill from installedSkills list or directory", async () => {
+      const tempDir = path.resolve(os.tmpdir(), `dethz-test-skill-${Date.now()}`);
+      const skillDir = path.resolve(tempDir, ".agent/skills/test-skill");
+      await Bun.write(path.resolve(skillDir, "SKILL.md"), "skill content");
+
+      expect(isSkillInstalled("test-skill", ["agent"], tempDir)).toBe(true);
+      expect(isSkillInstalled("other-skill", ["agent"], tempDir)).toBe(false);
+      expect(isSkillInstalled("other-skill", ["agent"], tempDir, ["other-skill"])).toBe(true);
+    });
+
+    it("should detect installed rule from installedRules list or file", async () => {
+      const tempDir = path.resolve(os.tmpdir(), `dethz-test-rule-${Date.now()}`);
+      const rulePath = path.resolve(tempDir, ".agent/rules/my-rule.md");
+      await Bun.write(rulePath, "rule content");
+
+      const mockRule = {
+        id: "my-rule",
+        name: "my-rule",
+        filename: "my-rule.md",
+        sourcePath: ".agent/rules/my-rule.md",
+        rawUrl: "http://example.com",
+        sha: "123",
+      };
+
+      expect(isRuleInstalled(mockRule, ["agent"], tempDir)).toBe(true);
+      expect(
+        isRuleInstalled(
+          { ...mockRule, name: "not-installed", filename: "not-installed.md" },
+          ["agent"],
+          tempDir
+        )
+      ).toBe(false);
+      expect(
+        isRuleInstalled(
+          { ...mockRule, name: "installed-list", filename: "installed-list.md" },
+          ["agent"],
+          tempDir,
+          ["installed-list"]
+        )
+      ).toBe(true);
+    });
+  });
 });
+
 
