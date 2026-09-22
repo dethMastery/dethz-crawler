@@ -167,7 +167,9 @@ export function isRulePath(path: string): boolean {
     lower === "claude.md" ||
     lower === "agents.md" ||
     lower === "gemini.md" ||
-    lower === ".windsurfrules"
+    lower === ".windsurfrules" ||
+    lower === ".clinerules" ||
+    lower === ".cursorrules"
   ) {
     return true;
   }
@@ -177,8 +179,12 @@ export function isRulePath(path: string): boolean {
     /^\.agent\/rules\/.+\.(md|mdc)$/i,
     /^\.agents\/rules\/.+\.(md|mdc)$/i,
     /^\.cursor\/rules\/.+\.(md|mdc)$/i,
+    /^\.claude\/rules\/.+\.(md|mdc)$/i,
+    /^\.windsurf\/rules\/.+\.(md|mdc)$/i,
+    /^\.cline\/rules\/.+\.(md|mdc)$/i,
     /^rules\/.+\.(md|mdc)$/i,
     /^\.github\/copilot-instructions\.md$/i,
+    /^\.github\/instructions\/.+\.(md|mdc)$/i,
   ];
 
   return ruleDirPatterns.some((pattern) => pattern.test(path));

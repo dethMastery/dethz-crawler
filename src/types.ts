@@ -1,4 +1,14 @@
-export type AgentFormat = "agent" | "agents" | "cursor" | "claude";
+export const AGENT_FORMATS = [
+  "agent",
+  "agents",
+  "claude",
+  "cursor",
+  "windsurf",
+  "copilot",
+  "cline",
+] as const;
+
+export type AgentFormat = (typeof AGENT_FORMATS)[number];
 
 export type PullItemType = "all" | "rules" | "skills";
 
@@ -64,6 +74,7 @@ export interface PullOptions {
   branch?: string;
   type?: PullItemType;
   format?: AgentFormat;
+  formats?: AgentFormat[];
   targetDir?: string;
   force?: boolean;
   dryRun?: boolean;
@@ -84,7 +95,9 @@ export interface ProjectConfig {
   repo?: string;
   branch?: string;
   format?: AgentFormat;
+  formats?: AgentFormat[];
   lastSync?: string;
   installedRules?: string[];
   installedSkills?: string[];
 }
+

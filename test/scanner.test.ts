@@ -34,10 +34,17 @@ Content goes here.`;
       expect(isRulePath(".agent/rules/use-bun.md")).toBe(true);
       expect(isRulePath(".agents/rules/test.md")).toBe(true);
       expect(isRulePath(".cursor/rules/bun.mdc")).toBe(true);
+      expect(isRulePath(".claude/rules/guidelines.md")).toBe(true);
+      expect(isRulePath(".windsurf/rules/rules.md")).toBe(true);
+      expect(isRulePath(".cline/rules/coding.md")).toBe(true);
+      expect(isRulePath(".github/instructions/guidelines.md")).toBe(true);
       expect(isRulePath("rules/standard.md")).toBe(true);
       expect(isRulePath("CLAUDE.md")).toBe(true);
       expect(isRulePath("AGENTS.md")).toBe(true);
       expect(isRulePath("GEMINI.md")).toBe(true);
+      expect(isRulePath(".windsurfrules")).toBe(true);
+      expect(isRulePath(".clinerules")).toBe(true);
+      expect(isRulePath(".cursorrules")).toBe(true);
       expect(isRulePath(".github/copilot-instructions.md")).toBe(true);
     });
 

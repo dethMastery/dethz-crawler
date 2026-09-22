@@ -1,7 +1,11 @@
-#!/usr/bin/env bun
 import { parseArgs } from "node:util";
 import path from "node:path";
-import { detectProjectFormat, loadConfig, saveConfig } from "./config.ts";
+import {
+  detectProjectFormat,
+  detectProjectFormats,
+  loadConfig,
+  saveConfig,
+} from "./config.ts";
 import {
   fetchRawFile,
   getAuthToken,
@@ -11,9 +15,85 @@ import {
 } from "./github.ts";
 import { getTargetDirectories, pullItems } from "./pull.ts";
 import { scanTree } from "./scanner.ts";
-import type { AgentFormat, PullItemType, PullOptions } from "./types.ts";
+import {
+  AGENT_FORMATS,
+  type AgentFormat,
+  type PullItemType,
+  type PullOptions,
+} from "./types.ts";
 import { checkbox, confirm, input } from "@inquirer/prompts";
 import { banner, c, divider, error, info, step, success, warn } from "./ui.ts";
+
+const AGENT_LABELS: Record<AgentFormat, { name: string; hint: string }> = {
+  claude: { name: "Claude", hint: ".claude/, CLAUDE.md" },
+  cursor: { name: "Cursor", hint: ".cursor/rules/*.mdc" },
+  windsurf: { name: "Windsurf", hint: ".windsurf/, .windsurfrules" },
+  copilot: { name: "GitHub Copilot", hint: ".github/instructions" },
+  cline: { name: "Cline / Roo Code", hint: ".cline/, .clinerules" },
+  agents: { name: "Antigravity", hint: ".agents/rules, GEMINI.md" },
+  agent: { name: "Universal Agent", hint: ".agent/rules, AGENTS.md" },
+};
+
+function parseFormats(rawFormats: string | string[] | undefined): AgentFormat[] {
+  if (!rawFormats) return [];
+  const list = Array.isArray(rawFormats) ? rawFormats : [rawFormats];
+  const parsed = list
+    .flatMap((f) => f.split(","))
+    .map((f) => f.trim().toLowerCase() as AgentFormat)
+    .filter((f) => f.length > 0);
+
+  const invalid = parsed.filter((f) => !AGENT_FORMATS.includes(f));
+  if (invalid.length > 0) {
+    error(
+      `Invalid format(s): ${invalid.join(", ")}. Supported formats: ${AGENT_FORMATS.join(", ")}`,
+    );
+    process.exit(1);
+  }
+
+  return Array.from(new Set(parsed));
+}
+
+async function resolveFormats(
+  cliFormats: AgentFormat[],
+  savedFormats: AgentFormat[],
+  isInteractive: boolean,
+  promptMessage = "Select target AI agents (formats):",
+): Promise<AgentFormat[]> {
+  if (cliFormats.length > 0) {
+    return cliFormats;
+  }
+
+  const detected = detectProjectFormats();
+  const defaultSelection =
+    savedFormats.length > 0
+      ? savedFormats
+      : detected.length > 0
+      ? detected
+      : ["agent" as AgentFormat];
+
+  if (isInteractive) {
+    try {
+      const selected = await checkbox({
+        message: promptMessage,
+        choices: AGENT_FORMATS.map((fmt) => ({
+          name: `${c.bold(AGENT_LABELS[fmt].name)} ${c.dim(
+            `(${AGENT_LABELS[fmt].hint})`,
+          )}`,
+          value: fmt,
+          checked: defaultSelection.includes(fmt),
+        })),
+        validate: (answer) =>
+          answer.length > 0 ? true : "You must select at least one AI agent.",
+      });
+      return selected as AgentFormat[];
+    } catch {
+      info("Agent format selection cancelled.");
+      process.exit(0);
+    }
+  }
+
+  return defaultSelection;
+}
 
 function printHelp(): void {
   banner();
@@ -26,14 +106,15 @@ ${c.bold("COMMANDS:")}
   ${c.green("pull")}             Pull SKILL.md and rules from GitHub to local project (default)
   ${c.green("list")}             List available skills and rules in a GitHub repository
   ${c.green("sync")}             Update/re-pull previously installed rules & skills
-  ${c.green("init")}             Initialize agent directories (.agent/rules, .agent/skills)
+  ${c.green("init")}             Initialize agent directories (.claude, .cursor, .agent, etc.)
   ${c.green("help")}             Show this help message
 
 ${c.bold("OPTIONS:")}
   ${c.yellow("-r, --repo")} <repo>     GitHub repository (${c.dim("owner/repo")} or URL)
   ${c.yellow("-b, --branch")} <name>   Branch or commit ref (${c.dim("default: default branch")})
   ${c.yellow("-t, --type")} <type>     What to pull: ${c.cyan("all")} | ${c.cyan("rules")} | ${c.cyan("skills")} (${c.dim("default: all")})
-  ${c.yellow("-f, --format")} <fmt>    Agent format: ${c.cyan("agent")} | ${c.cyan("agents")} | ${c.cyan("cursor")} | ${c.cyan("claude")}
+  ${c.yellow("-f, --format")} <fmt...> AI agent format(s) (${c.dim("comma-separated or multiple")})
+                                 Supported: ${c.cyan("claude")} | ${c.cyan("cursor")} | ${c.cyan("windsurf")} | ${c.cyan("copilot")} | ${c.cyan("cline")} | ${c.cyan("agent")} | ${c.cyan("agents")}
   ${c.yellow("-d, --target")} <dir>    Custom destination directory in local project
   ${c.yellow("--rule")} <name>         Pull specific rule(s) (${c.dim("comma-separated or multiple")})
   ${c.yellow("--skill")} <name>        Pull specific skill(s) (${c.dim("comma-separated or multiple")})
@@ -45,19 +126,22 @@ ${c.bold("OPTIONS:")}
   ${c.yellow("-h, --help")}            Show help message
 
 ${c.bold("EXAMPLES:")}
+  ${c.dim("# Pull for multiple AI agents (e.g. Claude and Cursor)")}
+  bunx dethz-crawler pull --repo owner/repo -f claude,cursor
+
   ${c.dim("# Pull all rules & skills from a repo")}
   bunx dethz-crawler pull --repo dethMastery/dotfiles
 
   ${c.dim("# List what is available in a repo")}
   bunx dethz-crawler list --repo dethMastery/dotfiles
 
-  ${c.dim("# Pull only rules into Cursor format (.cursor/rules/*.mdc)")}
-  bunx dethz-crawler pull -r owner/repo --type rules --format cursor
+  ${c.dim("# Pull only rules into Claude and Cursor")}
+  bunx dethz-crawler pull -r owner/repo --type rules -f claude,cursor
 
   ${c.dim("# Pull a specific skill")}
   bunx dethz-crawler pull -r owner/repo --skill web-search
 
-  ${c.dim("# Re-sync all installed items")}
+  ${c.dim("# Re-sync all installed items across all configured agents")}
   bunx dethz-crawler sync
 `);
 }
@@ -69,7 +153,7 @@ async function main(): Promise<void> {
       repo: { type: "string", short: "r" },
       branch: { type: "string", short: "b" },
       type: { type: "string", short: "t", default: "all" },
-      format: { type: "string", short: "f" },
+      format: { type: "string", short: "f", multiple: true },
       target: { type: "string", short: "d" },
       rule: { type: "string", multiple: true },
       skill: { type: "string", multiple: true },
@@ -103,31 +187,44 @@ async function main(): Promise<void> {
 
   // 1. INIT Command
   if (command === "init") {
-    const format =
-      (values.format as AgentFormat) ||
-      (await detectProjectFormat()) ||
-      "agent";
+    const isInteractive = Boolean(process.stdin.isTTY && !values.yes);
+    const cliFormats = parseFormats(values.format);
+    const savedFormats =
+      projectConfig.formats ||
+      (projectConfig.format ? [projectConfig.format] : []);
 
-    const { rulesDir, skillsDir } = getTargetDirectories(process.cwd(), format);
+    const selectedFormats = await resolveFormats(
+      cliFormats,
+      savedFormats,
+      isInteractive,
+      "Select AI agent formats to initialize:",
+    );
 
-    info(`Initializing agent structure for format: ${c.cyan(format)}`);
-    // Create placeholder/folder by writing a .gitkeep or verifying
-    await Bun.write(path.resolve(rulesDir, ".gitkeep"), "");
-    await Bun.write(path.resolve(skillsDir, ".gitkeep"), "");
+    info(
+      `Initializing agent structure for: ${selectedFormats
+        .map((f) => c.cyan(f))
+        .join(", ")}`,
+    );
+
+    for (const fmt of selectedFormats) {
+      const { rulesDir, skillsDir } = getTargetDirectories(process.cwd(), fmt);
+      await Bun.write(path.resolve(rulesDir, ".gitkeep"), "");
+      await Bun.write(path.resolve(skillsDir, ".gitkeep"), "");
+      success(
+        `Initialized [${c.yellow(fmt)}]: ${c.dim(
+          path.relative(process.cwd(), rulesDir),
+        )} and ${c.dim(path.relative(process.cwd(), skillsDir))}`,
+      );
+    }
 
     const newConfig = {
       ...projectConfig,
-      format,
+      format: selectedFormats[0],
+      formats: selectedFormats,
       repo: values.repo || projectConfig.repo,
     };
     await saveConfig(newConfig);
 
-    success(
-      `Created rules directory: ${c.dim(path.relative(process.cwd(), rulesDir))}`,
-    );
-    success(
-      `Created skills directory: ${c.dim(path.relative(process.cwd(), skillsDir))}`,
-    );
     success(`Saved configuration to ${c.dim(".agentrc.json")}`);
     return;
   }
@@ -261,10 +358,28 @@ async function main(): Promise<void> {
   // 4. PULL or SYNC Command
   if (command === "pull" || command === "sync") {
     const pullType = (values.type as PullItemType) || "all";
-    const selectedFormat =
-      (values.format as AgentFormat) ||
-      projectConfig.format ||
-      (await detectProjectFormat());
+    const cliFormats = parseFormats(values.format);
+    const savedFormats =
+      projectConfig.formats ||
+      (projectConfig.format ? [projectConfig.format] : []);
+
+    let selectedFormats: AgentFormat[];
+    if (command === "sync") {
+      selectedFormats =
+        cliFormats.length > 0
+          ? cliFormats
+          : savedFormats.length > 0
+          ? savedFormats
+          : ["agent"];
+    } else {
+      const isInteractive = Boolean(process.stdin.isTTY && !values.yes);
+      selectedFormats = await resolveFormats(
+        cliFormats,
+        savedFormats,
+        isInteractive,
+        "Select target AI agents (formats):",
+      );
+    }
 
     const hasExplicitRule = Boolean(values.rule && values.rule.length > 0);
     const hasExplicitSkill = Boolean(values.skill && values.skill.length > 0);
@@ -414,9 +529,9 @@ async function main(): Promise<void> {
     step(
       3,
       3,
-      `Pulling ${filteredRules.length} rule(s) and ${filteredSkills.length} skill(s) into ${c.cyan(
-        selectedFormat,
-      )} format...`,
+      `Pulling ${filteredRules.length} rule(s) and ${filteredSkills.length} skill(s) into ${selectedFormats
+        .map((f) => c.cyan(f))
+        .join(", ")}...`,
     );
 
     if (filteredRules.length === 0 && filteredSkills.length === 0) {
@@ -428,7 +543,8 @@ async function main(): Promise<void> {
       repo: `${owner}/${repo}`,
       branch,
       type: pullType,
-      format: selectedFormat,
+      format: selectedFormats[0],
+      formats: selectedFormats,
       targetDir: values.target,
       force: values.force,
       dryRun: values["dry-run"],
@@ -482,7 +598,8 @@ async function main(): Promise<void> {
       await saveConfig({
         repo: `${owner}/${repo}`,
         branch,
-        format: selectedFormat,
+        format: selectedFormats[0],
+        formats: selectedFormats,
         lastSync: new Date().toISOString(),
         installedRules: mergedRules,
         installedSkills: mergedSkills,

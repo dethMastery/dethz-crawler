@@ -7,7 +7,7 @@ export function banner(): void {
   console.log(
     chalk.bold(
       chalk.cyan("⚡ dethz-crawler") +
-        chalk.gray(" v0.1.0") +
+        chalk.gray(" v0.1.1") +
         chalk.dim(" - AI Agent Skills & Rules Sync"),
     ),
   );

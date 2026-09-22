@@ -50,6 +50,30 @@ describe("pull", () => {
       expect(dirs.rulesDir).toBe(path.resolve("/root/.cursor/rules"));
       expect(dirs.skillsDir).toBe(path.resolve("/root/.cursor/skills"));
     });
+
+    it("should return .claude dirs for claude format", () => {
+      const dirs = getTargetDirectories("/root", "claude");
+      expect(dirs.rulesDir).toBe(path.resolve("/root/.claude/rules"));
+      expect(dirs.skillsDir).toBe(path.resolve("/root/.claude/skills"));
+    });
+
+    it("should return .windsurf dirs for windsurf format", () => {
+      const dirs = getTargetDirectories("/root", "windsurf");
+      expect(dirs.rulesDir).toBe(path.resolve("/root/.windsurf/rules"));
+      expect(dirs.skillsDir).toBe(path.resolve("/root/.windsurf/skills"));
+    });
+
+    it("should return .github dirs for copilot format", () => {
+      const dirs = getTargetDirectories("/root", "copilot");
+      expect(dirs.rulesDir).toBe(path.resolve("/root/.github/instructions"));
+      expect(dirs.skillsDir).toBe(path.resolve("/root/.github/skills"));
+    });
+
+    it("should return .cline dirs for cline format", () => {
+      const dirs = getTargetDirectories("/root", "cline");
+      expect(dirs.rulesDir).toBe(path.resolve("/root/.cline/rules"));
+      expect(dirs.skillsDir).toBe(path.resolve("/root/.cline/skills"));
+    });
   });
 
   describe("formatRuleFilename", () => {
@@ -61,9 +85,15 @@ describe("pull", () => {
       expect(formatRuleFilename("use-bun.mdc", "agent")).toBe("use-bun.md");
     });
 
+    it("should convert to .md for claude format", () => {
+      expect(formatRuleFilename("use-bun.mdc", "claude")).toBe("use-bun.md");
+    });
+
     it("should preserve special root files", () => {
       expect(formatRuleFilename("CLAUDE.md", "cursor")).toBe("CLAUDE.md");
       expect(formatRuleFilename("AGENTS.md", "agent")).toBe("AGENTS.md");
+      expect(formatRuleFilename(".windsurfrules", "windsurf")).toBe(".windsurfrules");
+      expect(formatRuleFilename(".clinerules", "cline")).toBe(".clinerules");
     });
   });
 
@@ -81,7 +111,74 @@ describe("pull", () => {
 
       expect(loaded.repo).toBe("dethMastery/test-repo");
       expect(loaded.format).toBe("agent");
+      expect(loaded.formats).toEqual(["agent"]);
       expect(loaded.installedRules).toEqual(["rule-1", "rule-2"]);
+    });
+
+    it("should support multiple formats in config", async () => {
+      const tempDir = path.resolve(os.tmpdir(), `dethz-crawler-multi-${Date.now()}`);
+      const testConfig = {
+        repo: "dethMastery/test-repo",
+        formats: ["claude" as const, "cursor" as const],
+        installedRules: ["rule-1"],
+      };
+
+      await saveConfig(testConfig, tempDir);
+      const loaded = await loadConfig(tempDir);
+
+      expect(loaded.formats).toEqual(["claude", "cursor"]);
+      expect(loaded.format).toBe("claude");
+    });
+  });
+
+  describe("pullItems with multiple formats", () => {
+    it("should handle multi-format dry run without throwing", async () => {
+      const { pullItems } = await import("../src/pull.ts");
+      const result = await pullItems({
+        owner: "test",
+        repo: "test-repo",
+        branch: "main",
+        rules: [
+          {
+            id: "rule1",
+            name: "rule1",
+            filename: "rule1.md",
+            sourcePath: ".agent/rules/rule1.md",
+            rawUrl: "http://example.com",
+            sha: "123",
+          },
+        ],
+        skills: [
+          {
+            id: "skill1",
+            name: "skill1",
+            skillMdPath: "skills/skill1/SKILL.md",
+            baseDir: "skills/skill1",
+            files: [
+              {
+                path: "skills/skill1/SKILL.md",
+                relativePath: "SKILL.md",
+                rawUrl: "http://example.com",
+                sha: "456",
+              },
+            ],
+          },
+        ],
+        options: {
+          repo: "test/test-repo",
+          formats: ["claude", "cursor"],
+          dryRun: true,
+        },
+        projectRoot: "/mock/root",
+      });
+
+      expect(result.rulesPulled).toContain("rule1");
+      expect(result.skillsPulled).toContain("skill1");
+      expect(result.filesWritten.length).toBe(4); // 2 rule files (.claude, .cursor) + 2 skill files (.claude, .cursor)
+      expect(result.filesWritten.some((f) => f.includes(".claude/rules"))).toBe(true);
+      expect(result.filesWritten.some((f) => f.includes(".cursor/rules"))).toBe(true);
+      expect(result.filesWritten.some((f) => f.includes(".claude/skills"))).toBe(true);
+      expect(result.filesWritten.some((f) => f.includes(".cursor/skills"))).toBe(true);
     });
   });
 });
