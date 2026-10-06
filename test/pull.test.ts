@@ -229,7 +229,206 @@ describe("pull", () => {
         )
       ).toBe(true);
     });
+
+    it("should detect installed skill and rule with new schema format", async () => {
+      const tempDir = path.resolve(os.tmpdir(), `dethz-test-schema-${Date.now()}`);
+
+      const installedSkills = [
+        "skill/kizuna-inc/kz-skill:7bcb366/skills/workspace-allow",
+      ];
+      expect(isSkillInstalled("workspace-allow", ["agent"], tempDir, installedSkills)).toBe(true);
+      expect(isSkillInstalled("other-skill", ["agent"], tempDir, installedSkills)).toBe(false);
+
+      const installedRules = [
+        "rules/kizuna-inc/kz-rule:99521e5/rules/version-bump.md",
+      ];
+      const mockRule = {
+        id: "version-bump",
+        name: "version-bump",
+        filename: "version-bump.md",
+        sourcePath: "rules/version-bump.md",
+        rawUrl: "http://example.com",
+        sha: "123",
+      };
+      expect(isRuleInstalled(mockRule, ["agent"], tempDir, installedRules)).toBe(true);
+      expect(
+        isRuleInstalled(
+          { ...mockRule, name: "other-rule", filename: "other-rule.md", sourcePath: "rules/other-rule.md" },
+          ["agent"],
+          tempDir,
+          installedRules
+        )
+      ).toBe(false);
+    });
+  });
+
+  describe("installed items schema helpers", () => {
+    it("should parse installed rule and skill entries", async () => {
+      const { parseInstalledItem } = await import("../src/config.ts");
+
+      const rule = parseInstalledItem("rules/kizuna-inc/kz-rule:99521e5/rules/version-bump.md");
+      expect(rule).toEqual({
+        type: "rules",
+        owner: "kizuna-inc",
+        repo: "kz-rule",
+        ref: "99521e5",
+        path: "rules/version-bump.md",
+        name: "version-bump",
+      });
+
+      const skill = parseInstalledItem("skill/kizuna-inc/kz-skill:7bcb366/skills/workspace-allow");
+      expect(skill).toEqual({
+        type: "skill",
+        owner: "kizuna-inc",
+        repo: "kz-skill",
+        ref: "7bcb366",
+        path: "skills/workspace-allow",
+        name: "workspace-allow",
+      });
+
+      expect(parseInstalledItem("legacy-rule-name")).toBeNull();
+    });
+
+    it("should format installed rule and skill entries", async () => {
+      const { formatInstalledRule, formatInstalledSkill } = await import("../src/config.ts");
+
+      expect(
+        formatInstalledRule("kizuna-inc", "kz-rule", "99521e5", "rules/version-bump.md")
+      ).toBe("rules/kizuna-inc/kz-rule:99521e5/rules/version-bump.md");
+
+      expect(
+        formatInstalledSkill("kizuna-inc", "kz-skill", "7bcb366", "skills/workspace-allow", "workspace-allow")
+      ).toBe("skill/kizuna-inc/kz-skill:7bcb366/skills/workspace-allow");
+    });
+
+    it("should merge installed entries and update existing items by name", async () => {
+      const { mergeInstalledEntries } = await import("../src/config.ts");
+
+      const existing = [
+        "rules/kizuna-inc/kz-rule:old123/rules/version-bump.md",
+        "rules/owner/other:ref/rules/other.md",
+      ];
+      const incoming = [
+        "rules/kizuna-inc/kz-rule:new456/rules/version-bump.md",
+        "rules/owner/third:ref/rules/third.md",
+      ];
+
+      const merged = mergeInstalledEntries(existing, incoming);
+      expect(merged).toHaveLength(3);
+      expect(merged).toContain("rules/kizuna-inc/kz-rule:new456/rules/version-bump.md");
+      expect(merged).toContain("rules/owner/other:ref/rules/other.md");
+      expect(merged).toContain("rules/owner/third:ref/rules/third.md");
+    });
+
+    it("should extract installed repos from config", async () => {
+      const { getInstalledRepos } = await import("../src/config.ts");
+
+      const config = {
+        installedRules: ["rules/kizuna-inc/kz-rule:99521e5/rules/version-bump.md"],
+        installedSkills: ["skill/kizuna-inc/kz-skill:7bcb366/skills/workspace-allow"],
+      };
+
+      const repos = getInstalledRepos(config);
+      expect(repos).toEqual(["kizuna-inc/kz-rule", "kizuna-inc/kz-skill"]);
+    });
+
+    it("should save config without redundant format, repo, or branch when not specified", async () => {
+      const tempDir = path.resolve(os.tmpdir(), `dethz-crawler-clean-${Date.now()}`);
+      const testConfig = {
+        formats: ["agent" as const],
+        installedRules: ["rules/kizuna-inc/kz-rule:99521e5/rules/version-bump.md"],
+        installedSkills: ["skill/kizuna-inc/kz-skill:7bcb366/skills/workspace-allow"],
+      };
+
+      await saveConfig(testConfig, tempDir);
+      const file = Bun.file(path.resolve(tempDir, ".agentrc.json"));
+      const rawText = await file.text();
+      const parsed = JSON.parse(rawText);
+
+      expect(parsed.format).toBeUndefined();
+      expect(parsed.repo).toBeUndefined();
+      expect(parsed.branch).toBeUndefined();
+      expect(parsed.lastSync).toBeUndefined();
+      expect(parsed.formats).toEqual(["agent"]);
+      expect(parsed.installedRules).toEqual(testConfig.installedRules);
+      expect(parsed.installedSkills).toEqual(testConfig.installedSkills);
+    });
+
+    it("should remove rules and skills by name from installed lists", async () => {
+      const { removeInstalledRules, removeInstalledSkills } = await import("../src/config.ts");
+
+      const rules = [
+        "rules/kizuna-inc/kz-rule:99521e5/rules/version-bump.md",
+        "rules/kizuna-inc/kz-rule:99521e5/rules/other-rule.md",
+        "legacy-rule",
+      ];
+      expect(removeInstalledRules(rules, ["version-bump", "legacy-rule"])).toEqual([
+        "rules/kizuna-inc/kz-rule:99521e5/rules/other-rule.md",
+      ]);
+
+      const skills = [
+        "skill/kizuna-inc/kz-skill:7bcb366/skills/workspace-allow",
+        "skill/kizuna-inc/kz-skill:7bcb366/skills/git-flow",
+        "legacy-skill",
+      ];
+      expect(removeInstalledSkills(skills, ["workspace-allow"])).toEqual([
+        "skill/kizuna-inc/kz-skill:7bcb366/skills/git-flow",
+        "legacy-skill",
+      ]);
+    });
+  });
+
+  describe("removeItems", () => {
+    it("should remove rule files and skill directories across agent formats", async () => {
+      const { removeItems } = await import("../src/pull.ts");
+      const tempDir = path.resolve(os.tmpdir(), `dethz-test-remove-${Date.now()}`);
+
+      // Setup mock files for "agent" format
+      const ruleFile = path.resolve(tempDir, ".agent/rules/test-rule.md");
+      const skillFile = path.resolve(tempDir, ".agent/skills/test-skill/SKILL.md");
+      await Bun.write(ruleFile, "rule content");
+      await Bun.write(skillFile, "skill content");
+
+      expect(await Bun.file(ruleFile).exists()).toBe(true);
+      expect(await Bun.file(skillFile).exists()).toBe(true);
+
+      const result = await removeItems({
+        rules: ["test-rule"],
+        skills: ["test-skill"],
+        formats: ["agent"],
+        targetDir: tempDir,
+        dryRun: false,
+      });
+
+      expect(result.rulesRemoved).toContain("test-rule");
+      expect(result.skillsRemoved).toContain("test-skill");
+      expect(result.filesDeleted.length).toBeGreaterThan(0);
+
+      // Verify files were actually removed
+      expect(await Bun.file(ruleFile).exists()).toBe(false);
+      expect(await Bun.file(skillFile).exists()).toBe(false);
+    });
+
+    it("should support dry-run without deleting files", async () => {
+      const { removeItems } = await import("../src/pull.ts");
+      const tempDir = path.resolve(os.tmpdir(), `dethz-test-remove-dry-${Date.now()}`);
+
+      const ruleFile = path.resolve(tempDir, ".agent/rules/dry-rule.md");
+      await Bun.write(ruleFile, "rule content");
+
+      const result = await removeItems({
+        rules: ["dry-rule"],
+        skills: [],
+        formats: ["agent"],
+        targetDir: tempDir,
+        dryRun: true,
+      });
+
+      expect(result.rulesRemoved).toContain("dry-rule");
+      expect(await Bun.file(ruleFile).exists()).toBe(true);
+    });
   });
 });
+
 
 

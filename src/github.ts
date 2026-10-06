@@ -113,6 +113,31 @@ export async function getDefaultBranch(
 }
 
 /**
+ * Fetch latest commit SHA (short 7-char) for a ref/branch in a repository.
+ * Falls back to ref if unavailable.
+ */
+export async function getCommitSha(
+  owner: string,
+  repo: string,
+  ref: string,
+  token?: string
+): Promise<string> {
+  try {
+    const url = `https://api.github.com/repos/${owner}/${repo}/commits/${ref}`;
+    const res = await fetch(url, { headers: getHeaders(token) });
+    if (res.ok) {
+      const data = (await res.json()) as { sha?: string };
+      if (data.sha) {
+        return data.sha.slice(0, 7);
+      }
+    }
+  } catch {
+    // ignore and fallback to ref
+  }
+  return ref;
+}
+
+/**
  * Fetch git tree recursively from GitHub.
  */
 export async function getRepoTree(

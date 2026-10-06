@@ -1,5 +1,6 @@
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
+import { parseInstalledItem } from "./config.ts";
 import { fetchRawFile } from "./github.ts";
 import type {
   AgentFormat,
@@ -145,7 +146,13 @@ export function isSkillInstalled(
   baseDir = process.cwd(),
   installedSkills: string[] = []
 ): boolean {
-  if (installedSkills.includes(skillName)) {
+  if (
+    installedSkills.includes(skillName) ||
+    installedSkills.some((s) => {
+      const parsed = parseInstalledItem(s);
+      return parsed ? parsed.name === skillName : s.endsWith(`/${skillName}`);
+    })
+  ) {
     return true;
   }
   const checkFormats = formats.length > 0 ? formats : ["agent" as AgentFormat];
@@ -167,7 +174,24 @@ export function isRuleInstalled(
   baseDir = process.cwd(),
   installedRules: string[] = []
 ): boolean {
-  if (installedRules.includes(rule.name)) {
+  if (
+    installedRules.includes(rule.name) ||
+    installedRules.some((r) => {
+      const parsed = parseInstalledItem(r);
+      if (parsed) {
+        return (
+          parsed.name === rule.name ||
+          parsed.path === rule.sourcePath ||
+          parsed.path.endsWith(`/${rule.filename}`)
+        );
+      }
+      return (
+        r.endsWith(`/${rule.name}`) ||
+        r.endsWith(`/${rule.filename}`) ||
+        r.endsWith(`/${rule.name}.md`)
+      );
+    })
+  ) {
     return true;
   }
   const checkFormats = formats.length > 0 ? formats : ["agent" as AgentFormat];
@@ -363,6 +387,157 @@ export async function pullItems(params: {
 
     if (skillPulledAny && !result.skillsPulled.includes(skill.name)) {
       result.skillsPulled.push(skill.name);
+    }
+  }
+
+  return result;
+}
+
+export interface RemoveResult {
+  rulesRemoved: string[];
+  skillsRemoved: string[];
+  filesDeleted: string[];
+  errors: Array<{ item: string; error: string }>;
+}
+
+/**
+ * Remove selected rules and skills from disk across all specified formats.
+ */
+export async function removeItems(params: {
+  rules?: string[];
+  skills?: string[];
+  formats: AgentFormat[];
+  projectRoot?: string;
+  targetDir?: string;
+  dryRun?: boolean;
+}): Promise<RemoveResult> {
+  const {
+    rules = [],
+    skills = [],
+    formats,
+    projectRoot: rawProjectRoot,
+    targetDir: rawTargetDir,
+    dryRun = false,
+  } = params;
+  const projectRoot = rawTargetDir || rawProjectRoot || process.cwd();
+
+  const result: RemoveResult = {
+    rulesRemoved: [],
+    skillsRemoved: [],
+    filesDeleted: [],
+    errors: [],
+  };
+
+  const targetFormats = formats.length > 0 ? formats : (["agent"] as AgentFormat[]);
+
+  // 1. Remove rules
+  for (const ruleIdent of rules) {
+    const parsed = parseInstalledItem(ruleIdent);
+    const ruleName = parsed
+      ? parsed.name
+      : ruleIdent.replace(/\.(md|mdc)$/i, "");
+    let removedAny = false;
+
+    for (const fmt of targetFormats) {
+      try {
+        const { rulesDir } = getTargetDirectories(projectRoot, fmt);
+        const candidates = [
+          path.resolve(rulesDir, `${ruleName}.md`),
+          path.resolve(rulesDir, `${ruleName}.mdc`),
+        ];
+        if (parsed) {
+          const filename = parsed.path.split("/").pop();
+          if (filename) {
+            candidates.push(path.resolve(rulesDir, filename));
+            candidates.push(
+              path.resolve(rulesDir, formatRuleFilename(filename, fmt)),
+            );
+          }
+        }
+
+        const rootCandidates = [
+          path.resolve(projectRoot, `${ruleName}.md`),
+          path.resolve(projectRoot, ruleName),
+        ];
+
+        const allCandidates = Array.from(
+          new Set([...candidates, ...rootCandidates]),
+        );
+
+        for (const filePath of allCandidates) {
+          if (existsSync(filePath)) {
+            if (dryRun) {
+              info(`[DRY-RUN] Would remove rule file (${fmt}): ${filePath}`);
+              result.filesDeleted.push(filePath);
+              removedAny = true;
+            } else {
+              rmSync(filePath, { force: true });
+              result.filesDeleted.push(filePath);
+              removedAny = true;
+              success(
+                `Removed rule file [${c.yellow(fmt)}]: ${c.cyan(
+                  ruleName,
+                )} (${c.dim(path.relative(projectRoot, filePath))})`,
+              );
+            }
+          }
+        }
+      } catch (err: any) {
+        result.errors.push({
+          item: `rule:${ruleName}:${fmt}`,
+          error: err.message || String(err),
+        });
+        error(`Failed to remove rule "${ruleName}" for ${fmt}: ${err.message}`);
+      }
+    }
+
+    if (removedAny || dryRun) {
+      result.rulesRemoved.push(ruleName);
+    }
+  }
+
+  // 2. Remove skills
+  for (const skillIdent of skills) {
+    const parsed = parseInstalledItem(skillIdent);
+    const skillName = parsed ? parsed.name : skillIdent;
+    let removedAny = false;
+
+    for (const fmt of targetFormats) {
+      try {
+        const { skillsDir } = getTargetDirectories(projectRoot, fmt);
+        const skillDir = path.resolve(skillsDir, skillName);
+
+        if (existsSync(skillDir)) {
+          if (dryRun) {
+            info(
+              `[DRY-RUN] Would remove skill directory (${fmt}): ${skillDir}`,
+            );
+            result.filesDeleted.push(skillDir);
+            removedAny = true;
+          } else {
+            rmSync(skillDir, { recursive: true, force: true });
+            result.filesDeleted.push(skillDir);
+            removedAny = true;
+            success(
+              `Removed skill [${c.yellow(fmt)}]: ${c.cyan(skillName)} (${c.dim(
+                path.relative(projectRoot, skillDir),
+              )})`,
+            );
+          }
+        }
+      } catch (err: any) {
+        result.errors.push({
+          item: `skill:${skillName}:${fmt}`,
+          error: err.message || String(err),
+        });
+        error(
+          `Failed to remove skill "${skillName}" for ${fmt}: ${err.message}`,
+        );
+      }
+    }
+
+    if (removedAny || dryRun) {
+      result.skillsRemoved.push(skillName);
     }
   }
 

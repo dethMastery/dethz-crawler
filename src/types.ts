@@ -101,3 +101,13 @@ export interface ProjectConfig {
   installedSkills?: string[];
 }
 
+export interface InstalledItemRef {
+  type: "rules" | "skill";
+  owner: string;
+  repo: string;
+  ref: string;
+  path: string;
+  name: string;
+}
+
+

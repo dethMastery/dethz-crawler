@@ -1,15 +1,13 @@
 {
-  "repo": "kizuna-inc/kz-rule",
-  "branch": "main",
-  "format": "agent",
   "formats": [
     "agent"
   ],
-  "lastSync": "2026-09-22T03:40:48.570Z",
   "installedRules": [
-    "version-bump"
+    "rules/kizuna-inc/kz-rule:99521e5/rules/version-bump.md",
+    "rules/kizuna-inc/kz-rule:99521e5/rules/release-note.md"
   ],
   "installedSkills": [
-    "workspace-allow"
+    "skill/kizuna-inc/kz-skill:7bcb366/skills/workspace-allow",
+    "skill/kizuna-inc/kz-skill:7bcb366/released-bump"
   ]
 }

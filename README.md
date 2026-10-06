@@ -138,17 +138,17 @@ When you pull or initialize rules, `dethz-crawler` stores project settings in `.
 
 ```json
 {
-  "repo": "owner/repo",
-  "branch": "main",
-  "format": "claude",
   "formats": ["claude", "cursor"],
-  "lastSync": "2026-09-17T02:00:00.000Z",
-  "installedRules": ["use-bun-instead-of-node-vite-npm-pnpm"],
-  "installedSkills": ["web-search"]
+  "installedRules": [
+    "rules/kizuna-inc/kz-rule:99521e5/rules/version-bump.md"
+  ],
+  "installedSkills": [
+    "skill/kizuna-inc/kz-skill:7bcb366/skills/workspace-allow"
+  ]
 }
 ```
 
-Running `dethz-crawler sync` will re-pull all items listed in `installedRules` and `installedSkills` across all configured `formats` from the remote repository.
+Running `dethz-crawler sync` will re-pull all items listed in `installedRules` and `installedSkills` across their respective repositories and configured `formats`.
 
 ---
 
