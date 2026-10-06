@@ -15,6 +15,8 @@
     "start": "bun run src/index.ts",
     "test": "bun test",
     "build": "bun build src/index.ts --target bun --outdir dist && chmod +x dist/index.js",
+    "build:bin": "bun run scripts/build.ts",
+    "build:all": "bun run scripts/build.ts --all --js",
     "prepublishOnly": "bun run build",
     "lint": "bun run tsc --noEmit"
   },

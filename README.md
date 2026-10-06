@@ -164,10 +164,33 @@ bun test
 # Run linter
 bun run lint
 
-# Build binary / distribution
+# Build standard distribution (dist/index.js)
 bun run build
+
+# Interactive Multi-OS Build Tool (prompts for targets)
+bun run build:bin
+
+# Compile standalone executables for all platforms (macOS, Linux, Windows)
+bun run build:all
+
+# Target-specific builds
+bun run scripts/build.ts --os mac                 # macOS Apple Silicon & Intel
+bun run scripts/build.ts --os linux               # Linux x64 & ARM64
+bun run scripts/build.ts --os windows             # Windows x64 .exe
+bun run scripts/build.ts -t darwin-arm64,linux-x64 # Specific targets
 ```
+
+### Supported Standalone Executable Targets
+- 🍏 **macOS Apple Silicon**: `dethz-crawler-darwin-arm64` (`bun-darwin-arm64`)
+- 🍏 **macOS Intel**: `dethz-crawler-darwin-x64` (`bun-darwin-x64`)
+- 🐧 **Linux x64**: `dethz-crawler-linux-x64` (`bun-linux-x64`)
+- 🐧 **Linux ARM64**: `dethz-crawler-linux-arm64` (`bun-linux-arm64`)
+- 🪟 **Windows x64**: `dethz-crawler-windows-x64.exe` (`bun-windows-x64`)
+- 📦 **JavaScript Bundle**: `dist/index.js`
+
+---
 
 ## License
 
 MIT © [Suphakit P.](https://github.com/dethMastery)
+
