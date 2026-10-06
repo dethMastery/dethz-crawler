@@ -1,6 +1,6 @@
 {
   "formats": [
-    "agent"
+    "agents"
   ],
   "installedRules": [
     "rules/kizuna-inc/kz-rule:99521e5/rules/version-bump.md",
