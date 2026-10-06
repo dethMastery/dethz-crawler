@@ -123,7 +123,7 @@ ${chalk.bold("OPTIONS:")}
                              Supported: ${TARGET_PLATFORMS.map((t) => chalk.cyan(t.id)).join(", ")}
   ${chalk.yellow("--os")} <os-list>          Target operating system(s): ${chalk.cyan("mac")}, ${chalk.cyan("linux")}, ${chalk.cyan("windows")}
   ${chalk.yellow("--js")}                    Also build universal JavaScript bundle (dist/index.js)
-  ${chalk.yellow("-o, --outdir")} <dir>      Output directory ${chalk.dim("(default: dist)")}
+  ${chalk.yellow("-o, --outdir")} <dir>      Output directory ${chalk.dim("(default: build)")}
   ${chalk.yellow("--entry")} <file>          Custom entrypoint ${chalk.dim("(default: src/index.ts)")}
   ${chalk.yellow("--clean")}                 Remove output directory before building
   ${chalk.yellow("--no-checksums")}          Skip generating SHA-256 checksums file
@@ -480,7 +480,7 @@ async function main(): Promise<void> {
       target: { type: "string", short: "t" },
       os: { type: "string" },
       js: { type: "boolean", default: false },
-      outdir: { type: "string", short: "o", default: "dist" },
+      outdir: { type: "string", short: "o", default: "build" },
       entry: { type: "string", default: "src/index.ts" },
       clean: { type: "boolean", default: false },
       checksums: { type: "boolean", default: true },
@@ -496,7 +496,7 @@ async function main(): Promise<void> {
 
   banner();
 
-  const outDir = path.resolve(process.cwd(), values.outdir || "dist");
+  const outDir = path.resolve(process.cwd(), values.outdir || "build");
   const entryPoint = path.resolve(process.cwd(), values.entry || "src/index.ts");
 
   if (!existsSync(entryPoint)) {

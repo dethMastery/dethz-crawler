@@ -180,13 +180,13 @@ bun run scripts/build.ts --os windows             # Windows x64 .exe
 bun run scripts/build.ts -t darwin-arm64,linux-x64 # Specific targets
 ```
 
-### Supported Standalone Executable Targets
-- 🍏 **macOS Apple Silicon**: `dethz-crawler-darwin-arm64` (`bun-darwin-arm64`)
-- 🍏 **macOS Intel**: `dethz-crawler-darwin-x64` (`bun-darwin-x64`)
-- 🐧 **Linux x64**: `dethz-crawler-linux-x64` (`bun-linux-x64`)
-- 🐧 **Linux ARM64**: `dethz-crawler-linux-arm64` (`bun-linux-arm64`)
-- 🪟 **Windows x64**: `dethz-crawler-windows-x64.exe` (`bun-windows-x64`)
-- 📦 **JavaScript Bundle**: `dist/index.js`
+### Supported Standalone Executable Targets (output to `./build/`)
+- 🍏 **macOS Apple Silicon**: `build/dethz-crawler-darwin-arm64` (`bun-darwin-arm64`)
+- 🍏 **macOS Intel**: `build/dethz-crawler-darwin-x64` (`bun-darwin-x64`)
+- 🐧 **Linux x64**: `build/dethz-crawler-linux-x64` (`bun-linux-x64`)
+- 🐧 **Linux ARM64**: `build/dethz-crawler-linux-arm64` (`bun-linux-arm64`)
+- 🪟 **Windows x64**: `build/dethz-crawler-windows-x64.exe` (`bun-windows-x64`)
+- 📦 **JavaScript Bundle**: `dist/index.js` (for npm / bunx)
 
 ---
 
